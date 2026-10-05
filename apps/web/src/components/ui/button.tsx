@@ -4,21 +4,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-[background,color,border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:pointer-events-none disabled:opacity-50 active:translate-y-px",
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:pointer-events-none disabled:opacity-50 active:translate-y-px",
   {
     variants: {
       variant: {
         primary:
-          "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm hover:bg-[var(--primary-hover)] hover:shadow-md",
+          "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]",
         premium:
-          "bg-[image:var(--gradient-primary)] text-white shadow-[0_10px_24px_rgb(37_99_235/0.2)] hover:brightness-95 hover:shadow-lg",
+          "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]",
         outline:
-          "border border-[var(--input)] bg-white text-[var(--foreground-secondary)] shadow-sm hover:border-[var(--primary-border)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-hover)]",
+          "border border-[var(--input)] bg-white text-[var(--foreground-secondary)] hover:border-[var(--primary-border)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary-hover)]",
         ghost:
           "text-[var(--muted-foreground)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]",
         danger:
-          "bg-[var(--danger)] text-white shadow-sm hover:bg-[var(--danger-hover)]",
-        success: "bg-[var(--success)] text-white shadow-sm hover:brightness-95",
+          "bg-[var(--danger)] text-white hover:bg-[var(--danger-hover)]",
+        success: "bg-[var(--success)] text-white hover:brightness-95",
       },
       size: {
         default: "h-11 px-4",

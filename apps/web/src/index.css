@@ -9,42 +9,41 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  color: #0f172a;
-  background: #f8fafc;
+  color: #24211e;
+  background: #f6f3ee;
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-strong: #1e40af;
+  --primary: #895332;
+  --primary-hover: #704127;
+  --primary-strong: #59341f;
   --primary-foreground: #ffffff;
-  --primary-soft: #eff6ff;
-  --primary-border: #bfdbfe;
-  --background: #f8fafc;
-  --surface: #ffffff;
-  --surface-muted: #f1f5f9;
-  --foreground: #0f172a;
-  --foreground-secondary: #334155;
-  --muted-foreground: #64748b;
-  --border: #e2e8f0;
-  --input: #cbd5e1;
-  --ring: #2563eb;
-  --success: #16a34a;
-  --success-soft: #f0fdf4;
-  --warning: #d97706;
-  --warning-soft: #fffbeb;
-  --danger: #dc2626;
-  --danger-hover: #b91c1c;
-  --danger-soft: #fef2f2;
-  --gradient-primary: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
-  --shadow-card:
-    0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.04);
-  --shadow-float: 0 20px 50px rgb(15 23 42 / 0.14);
+  --primary-soft: #f2e8de;
+  --primary-border: #d9bfa8;
+  --background: #f6f3ee;
+  --surface: #fffdfa;
+  --surface-muted: #eee9e1;
+  --foreground: #24211e;
+  --foreground-secondary: #514a42;
+  --muted-foreground: #756c61;
+  --border: #e2dbd1;
+  --input: #cbc1b5;
+  --ring: #895332;
+  --success: #3f6449;
+  --success-soft: #edf3ec;
+  --warning: #85551b;
+  --warning-soft: #faf0dd;
+  --danger: #b53f34;
+  --danger-hover: #97332a;
+  --danger-soft: #fbedeb;
+  --shadow-card: none;
+  --shadow-float: 0 16px 48px rgb(36 33 30 / 0.16);
   --brand-accent: #9a5b35;
 
   /* Compatibility aliases used throughout the existing application. */
   --page: var(--background);
-  --sidebar: var(--surface);
+  --sidebar: #eee8de;
   --surface-subtle: var(--surface-muted);
   --surface-warm: var(--primary-soft);
   --ink: var(--foreground);
@@ -89,7 +88,8 @@ h3,
 }
 
 :focus-visible {
-  outline-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
 }
 
 button,
@@ -144,7 +144,8 @@ button {
     display: none !important;
   }
 
-  main {
+  main,
+  .workspace-body {
     padding-left: 0 !important;
   }
 
