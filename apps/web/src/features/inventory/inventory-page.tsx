@@ -254,9 +254,11 @@ export function InventoryPage() {
                     </span>
                     <span className="hidden break-words text-right text-sm tabular-nums md:block"><span className="sr-only">Colors: </span>{item.colorCount}</span>
                     <span className="hidden break-words text-right text-sm tabular-nums md:block"><span className="sr-only">Containers: </span>{item.containerCount}</span>
-                    <span className="min-w-0 max-w-32 break-words text-right text-sm font-semibold tabular-nums md:hidden">
-                      <span className="block">{item.totalRolls} <span className="text-xs font-normal text-[var(--muted)]">Rolls</span></span>
-                      <span className="mt-1 block text-xs font-normal text-[var(--muted)]">{item.totalMeters} Meter</span>
+                    <span className="grid min-w-0 max-w-32 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-1.5 gap-y-0.5 break-words text-right tabular-nums md:hidden">
+                      <span className="text-base font-semibold leading-5">{item.totalRolls}</span>
+                      <span className="text-[11px] text-[var(--muted)]">Rolls</span>
+                      <span className="text-sm font-medium leading-5 text-[var(--ink-soft)]">{item.totalMeters}</span>
+                      <span className="text-[11px] text-[var(--muted)]">Meter</span>
                     </span>
                     <span className="hidden break-words text-right text-sm font-semibold tabular-nums md:block">{item.totalRolls}<span className="sr-only"> Rolls</span></span>
                     <span className="hidden break-words text-right text-sm tabular-nums md:block">{item.totalMeters}<span className="sr-only"> Meter</span></span>
@@ -274,18 +276,18 @@ export function InventoryPage() {
                         className="overflow-hidden"
                       >
                         <div className="border-t border-[var(--border)]">
-                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--border)] bg-[var(--page)] px-4 py-2">
-                            <div className="min-w-0 flex-1">
+                          <div className="flex flex-col items-stretch justify-between gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--page)] px-4 py-2 md:flex-row md:flex-wrap md:items-center md:gap-y-1">
+                            <div className="min-w-0 md:flex-1">
                               <p className="break-words text-sm font-medium">{item.name || "Unnamed leather item"}</p>
                               <p className="mt-1 text-xs text-[var(--muted)]">
                                 {item.colorCount} {item.colorCount === 1 ? "color" : "colors"} · From {item.containerCount} {item.containerCount === 1 ? "container" : "containers"}
                               </p>
                             </div>
-                            <div className="flex flex-wrap gap-1">
-                              <Button type="button" variant="ghost" className="px-3" onClick={() => beginEditItem(item)}>
+                            <div className="-ml-2 flex flex-wrap gap-1 md:ml-0">
+                              <Button type="button" variant="ghost" className="px-2 text-xs md:px-3 md:text-sm" onClick={() => beginEditItem(item)}>
                                 <Edit3 aria-hidden="true" className="size-3.5" /> Edit item
                               </Button>
-                              <Button type="button" variant="ghost" className="px-3 text-[var(--danger)]" onClick={() => setDeleteTarget({ kind: "item", id: item.productId, label: item.itemCode })}>
+                              <Button type="button" variant="ghost" className="px-2 text-xs text-[var(--danger)] md:px-3 md:text-sm" onClick={() => setDeleteTarget({ kind: "item", id: item.productId, label: item.itemCode })}>
                                 <Trash2 aria-hidden="true" className="size-3.5" /> Delete item
                               </Button>
                             </div>
@@ -539,8 +541,8 @@ function InventoryColorDetails({
 }) {
   return (
     <section aria-label={`${variant.color} stock`} className="border-b border-[var(--border)] px-4 py-3 last:border-b-0 md:pl-8">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-1 basis-44 items-start gap-2.5">
+      <div className="flex flex-col items-stretch justify-between gap-x-4 gap-y-1 md:flex-row md:flex-wrap md:items-center md:gap-y-2">
+        <div className="flex min-w-0 items-start gap-2.5 md:flex-1 md:basis-44">
           <span aria-hidden="true" className="mt-1 size-3 shrink-0 border border-black/15" style={{ background: variant.colorCode }} />
           <div className="min-w-0">
             <h3 className="break-words text-sm font-semibold">{variant.color}{variant.size ? ` · ${variant.size}` : ""}</h3>
@@ -548,10 +550,10 @@ function InventoryColorDetails({
             {lowStock && <p className="mt-1 text-xs font-medium text-[var(--warning)]">Low stock</p>}
           </div>
         </div>
-        <div className="flex shrink-0 gap-1">
-          <Button type="button" variant="ghost" className="px-3" onClick={onAdjust}><Scale aria-hidden="true" className="size-4" /> Adjust</Button>
-          <Button type="button" size="icon" variant="ghost" aria-label={`Edit ${variant.color}`} onClick={onEdit}><Edit3 aria-hidden="true" className="size-4" /></Button>
-          <Button type="button" size="icon" variant="ghost" className="text-[var(--danger)]" aria-label={`Delete ${variant.color}`} onClick={onDelete}><Trash2 aria-hidden="true" className="size-4" /></Button>
+        <div className="-ml-2 flex shrink-0 self-start gap-0 md:ml-0 md:self-auto md:gap-1">
+          <Button type="button" variant="ghost" className="px-2 text-xs md:px-3 md:text-sm" onClick={onAdjust}><Scale aria-hidden="true" className="size-3.5 md:size-4" /> Adjust</Button>
+          <Button type="button" size="icon" variant="ghost" aria-label={`Edit ${variant.color}`} onClick={onEdit}><Edit3 aria-hidden="true" className="size-3.5 md:size-4" /></Button>
+          <Button type="button" size="icon" variant="ghost" className="text-[var(--danger)]" aria-label={`Delete ${variant.color}`} onClick={onDelete}><Trash2 aria-hidden="true" className="size-3.5 md:size-4" /></Button>
         </div>
       </div>
       {variant.batches.length ? (
