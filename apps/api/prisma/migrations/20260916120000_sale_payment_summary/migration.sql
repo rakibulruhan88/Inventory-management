@@ -1,0 +1,7 @@
+ALTER TABLE "Sale"
+ADD COLUMN "discountAmount" DECIMAL(14,2) NOT NULL DEFAULT 0,
+ADD COLUMN "receivedAmount" DECIMAL(14,2) NOT NULL DEFAULT 0,
+ADD COLUMN "changeAmount" DECIMAL(14,2) NOT NULL DEFAULT 0;
+
+UPDATE "Sale"
+SET "receivedAmount" = "paidAmount";

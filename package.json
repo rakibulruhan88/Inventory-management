@@ -1,0 +1,23 @@
+{
+  "name": "afia-leather-inventory",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @afia/api & npm run dev --workspace @afia/web",
+    "dev:web": "npm run dev --workspace @afia/web",
+    "dev:api": "npm run dev --workspace @afia/api",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run prisma:generate --workspace @afia/api",
+    "db:migrate": "npm exec --workspace @afia/api -- prisma migrate dev",
+    "db:studio": "npm run prisma:studio --workspace @afia/api",
+    "db:seed": "npm run prisma:seed --workspace @afia/api"
+  }
+}

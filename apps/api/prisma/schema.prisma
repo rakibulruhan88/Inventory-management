@@ -1,0 +1,439 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  STAFF
+}
+
+enum ContainerStatus {
+  DRAFT
+  IN_TRANSIT
+  RECEIVED
+  CLOSED
+}
+
+enum RollStatus {
+  FULL
+  OPEN
+  SOLD
+}
+
+enum PurchaseStatus {
+  DRAFT
+  RECEIVED
+  CANCELLED
+}
+
+enum SaleStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+  VOIDED
+}
+
+enum SaleMode {
+  FULL_ROLL
+  BY_METER
+}
+
+enum PaymentMethod {
+  CASH
+  BANK
+  MOBILE_BANKING
+  OTHER
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE
+  PAYMENT_REVERSAL
+  ADJUSTMENT
+  SALE_VOID
+  PURCHASE_REVERSAL
+}
+
+enum EmailDeliveryStatus {
+  SENT
+  FAILED
+}
+
+enum AuditAction {
+  SALE_CREATED
+  SALE_VOIDED
+  PURCHASE_RECEIVED
+  PURCHASE_REVERSED
+  STOCK_ADJUSTED
+  PAYMENT_RECEIVED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String?  @unique
+  username     String?  @unique
+  email        String?  @unique
+  passwordHash String
+  role         UserRole @default(STAFF)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  auditLogs    AuditLog[]
+}
+
+model Supplier {
+  id         String      @id @default(cuid())
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
+  searchText String      @default("")
+  archivedAt DateTime?
+  containers Container[]
+  purchases  Purchase[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+}
+
+model Customer {
+  id         String    @id @default(cuid())
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  searchText String    @default("")
+  archivedAt DateTime?
+  sales      Sale[]
+  payments   Payment[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+}
+
+model Container {
+  id                        String          @id @default(cuid())
+  containerNumber           String
+  normalizedContainerNumber String          @unique
+  supplierId                String
+  supplier                  Supplier        @relation(fields: [supplierId], references: [id])
+  status                    ContainerStatus @default(DRAFT)
+  shippedAt                 DateTime?
+  receivedAt                DateTime?
+  notes                     String?
+  searchText                String          @default("")
+  archivedAt                DateTime?
+  batches                   InventoryBatch[]
+  purchase                  Purchase?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  @@index([containerNumber])
+  @@index([supplierId])
+}
+
+model Product {
+  id                 String           @id @default(cuid())
+  itemCode           String
+  normalizedItemCode String           @unique
+  name               String?
+  description        String?
+  searchText         String           @default("")
+  archivedAt         DateTime?
+  variants           ProductVariant[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([itemCode])
+}
+
+model ProductVariant {
+  id            String          @id @default(cuid())
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id])
+  color         String
+  colorCode     String          @default("#8B5A2B")
+  size          String?
+  variantKey    String
+  searchText    String          @default("")
+  archivedAt    DateTime?
+  batches       InventoryBatch[]
+  purchaseLines PurchaseLine[]
+  saleLines     SaleLine[]
+  movements     StockMovement[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([productId, variantKey])
+  @@index([color])
+  @@index([size])
+}
+
+model InventoryBatch {
+  id           String         @id @default(cuid())
+  batchCode    String         @unique
+  containerId  String
+  container    Container      @relation(fields: [containerId], references: [id])
+  variantId    String
+  variant      ProductVariant @relation(fields: [variantId], references: [id])
+  receivedAt   DateTime?
+  notes        String?
+  originalRolls Int           @default(0)
+  originalMeter Decimal       @default(0) @db.Decimal(12, 2)
+  availableRolls Int          @default(0)
+  availableMeter Decimal      @default(0) @db.Decimal(12, 2)
+  rolls        Roll[]
+  purchaseLine PurchaseLine?
+  saleAllocations SaleBatchAllocation[]
+  movements    StockMovement[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([containerId])
+  @@index([variantId])
+}
+
+model Roll {
+  id              String               @id @default(cuid())
+  rollCode        String               @unique
+  batchId         String
+  batch           InventoryBatch       @relation(fields: [batchId], references: [id])
+  originalMeter   Decimal              @db.Decimal(12, 2)
+  remainingMeter  Decimal              @db.Decimal(12, 2)
+  status          RollStatus           @default(FULL)
+  saleAllocations SaleRollAllocation[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([batchId, status])
+  @@index([remainingMeter])
+}
+
+model Purchase {
+  id             String         @id @default(cuid())
+  purchaseNumber String         @unique
+  supplierId     String
+  supplier       Supplier       @relation(fields: [supplierId], references: [id])
+  containerId    String         @unique
+  container      Container      @relation(fields: [containerId], references: [id])
+  status         PurchaseStatus @default(DRAFT)
+  purchasedAt    DateTime       @default(now())
+  totalAmount    Decimal        @default(0) @db.Decimal(14, 2)
+  paidAmount     Decimal        @default(0) @db.Decimal(14, 2)
+  notes          String?
+  correctedAt    DateTime?
+  correctionReason String?
+  lines          PurchaseLine[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([supplierId])
+  @@index([purchasedAt])
+}
+
+model PurchaseLine {
+  id          String         @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase       @relation(fields: [purchaseId], references: [id])
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  batchId     String         @unique
+  batch       InventoryBatch @relation(fields: [batchId], references: [id])
+  rollCount   Int
+  totalMeter  Decimal        @db.Decimal(12, 2)
+  unitCost    Decimal?       @db.Decimal(12, 2)
+  lineTotal   Decimal        @default(0) @db.Decimal(14, 2)
+  createdAt   DateTime       @default(now())
+
+  @@index([purchaseId])
+  @@index([variantId])
+}
+
+model Sale {
+  id            String     @id @default(cuid())
+  invoiceNumber String     @unique
+  customerId    String
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  status        SaleStatus @default(DRAFT)
+  soldAt        DateTime   @default(now())
+  totalAmount   Decimal    @default(0) @db.Decimal(14, 2)
+  paidAmount    Decimal    @default(0) @db.Decimal(14, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(14, 2)
+  receivedAmount Decimal  @default(0) @db.Decimal(14, 2)
+  changeAmount   Decimal  @default(0) @db.Decimal(14, 2)
+  notes         String?
+  voidedAt      DateTime?
+  voidReason    String?
+  customerNameSnapshot String?
+  customerPhoneSnapshot String?
+  customerEmailSnapshot String?
+  customerAddressSnapshot String?
+  storeNameSnapshot String?
+  storePhoneSnapshot String?
+  storeEmailSnapshot String?
+  storeAddressSnapshot String?
+  storeLogoSnapshot String?
+  currencySymbolSnapshot String?
+  lines         SaleLine[]
+  payments      Payment[]
+  emailLogs     InvoiceEmailLog[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([customerId])
+  @@index([soldAt])
+}
+
+model SaleLine {
+  id           String               @id @default(cuid())
+  saleId       String
+  sale         Sale                 @relation(fields: [saleId], references: [id])
+  variantId    String
+  variant      ProductVariant       @relation(fields: [variantId], references: [id])
+  mode         SaleMode
+  rollsSold    Int                  @default(0)
+  meterSold    Decimal              @db.Decimal(12, 2)
+  ratePerMeter Decimal?             @db.Decimal(12, 2)
+  discount     Decimal              @default(0) @db.Decimal(14, 2)
+  lineTotal    Decimal              @db.Decimal(14, 2)
+  itemCodeSnapshot String?
+  itemNameSnapshot String?
+  colorNameSnapshot String?
+  colorCodeSnapshot String?
+  allocations  SaleRollAllocation[]
+  batchAllocations SaleBatchAllocation[]
+  createdAt    DateTime             @default(now())
+
+  @@index([saleId])
+  @@index([variantId])
+}
+
+model SaleBatchAllocation {
+  id             String         @id @default(cuid())
+  saleLineId     String
+  saleLine       SaleLine       @relation(fields: [saleLineId], references: [id])
+  batchId        String
+  batch          InventoryBatch @relation(fields: [batchId], references: [id])
+  rollsSold      Int            @default(0)
+  meterSold      Decimal        @db.Decimal(12, 2)
+  rollsBefore    Int
+  rollsAfter     Int
+  meterBefore    Decimal        @db.Decimal(12, 2)
+  meterAfter     Decimal        @db.Decimal(12, 2)
+  createdAt      DateTime       @default(now())
+
+  @@unique([saleLineId, batchId])
+  @@index([batchId])
+}
+
+model StockMovement {
+  id          String            @id @default(cuid())
+  type        StockMovementType
+  variantId   String
+  variant     ProductVariant    @relation(fields: [variantId], references: [id])
+  batchId     String
+  batch       InventoryBatch    @relation(fields: [batchId], references: [id])
+  reference   String
+  rollsChange Int               @default(0)
+  meterChange Decimal           @db.Decimal(12, 2)
+  reason      String?
+  actorId     String?
+  createdAt   DateTime          @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([batchId, createdAt])
+}
+
+model SaleRollAllocation {
+  id              String   @id @default(cuid())
+  saleLineId      String
+  saleLine        SaleLine @relation(fields: [saleLineId], references: [id])
+  rollId          String
+  roll            Roll     @relation(fields: [rollId], references: [id])
+  meterSold       Decimal  @db.Decimal(12, 2)
+  remainingBefore Decimal  @db.Decimal(12, 2)
+  remainingAfter  Decimal  @db.Decimal(12, 2)
+  isFullRoll      Boolean
+  createdAt       DateTime @default(now())
+
+  @@unique([saleLineId, rollId])
+  @@index([rollId])
+}
+
+model Payment {
+  id         String        @id @default(cuid())
+  customerId String
+  customer   Customer      @relation(fields: [customerId], references: [id])
+  saleId     String?
+  sale       Sale?         @relation(fields: [saleId], references: [id])
+  amount     Decimal       @db.Decimal(14, 2)
+  method     PaymentMethod @default(CASH)
+  reference  String?
+  receivedAt DateTime      @default(now())
+  notes      String?
+  voidedAt   DateTime?
+  createdAt  DateTime      @default(now())
+
+  @@index([customerId])
+  @@index([saleId])
+  @@index([receivedAt])
+}
+
+model InvoiceEmailLog {
+  id             String              @id @default(cuid())
+  saleId         String
+  sale           Sale                @relation(fields: [saleId], references: [id])
+  recipientEmail String
+  status         EmailDeliveryStatus
+  failureReason  String?
+  sentAt         DateTime             @default(now())
+
+  @@index([saleId, sentAt])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  entityType String
+  entityId   String
+  reason     String?
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  createdAt  DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model StoreSettings {
+  id                    String   @id @default("default")
+  storeName             String   @default("Afia Leather")
+  logoUrl               String?
+  faviconUrl            String?
+  storePhone            String?
+  storeEmail            String?
+  storeAddress          String?
+  currency              String   @default("BDT")
+  currencySymbol        String   @default("৳")
+  invoicePrefix         String   @default("AF-")
+  invoiceSequence       Int      @default(0)
+  defaultPaymentMethod  PaymentMethod @default(CASH)
+  lowStockRollThreshold Int      @default(3)
+  lowStockMeterThreshold Decimal @default(500) @db.Decimal(12, 2)
+  brandAccent           String   @default("#9A5B35")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}

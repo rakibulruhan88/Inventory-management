@@ -1,0 +1,304 @@
+import type {
+  CreateSupplierRequest,
+  CustomerInput,
+  CustomerSummary,
+  ContainerSummary,
+  ContainerUpdateInput,
+  HealthResponse,
+  InventoryItemSummary,
+  InventorySummary,
+  ProductSearchResult,
+  ReceivePurchaseRequest,
+  ReceivePurchaseResponse,
+  SaleSummary,
+  SaleInvoice,
+  PurchaseSummary,
+  CreateSaleRequest,
+  CreateSaleResponse,
+  GlobalSearchGroup,
+  ReceivePaymentRequest,
+  StoreSettingsContract,
+  SupplierSummary,
+  SupplierDetails,
+  SupplierInput,
+  UpdateProductRequest,
+  UpdateVariantRequest,
+  AuthUser,
+  LoginRequest,
+  LoginResponse,
+  AccountDetails,
+  UpdateAccountRequest,
+  ChangePasswordRequest,
+  CustomerDetails,
+  StockAdjustmentRequest,
+  VoidSaleRequest,
+} from "@afia/contracts";
+
+const apiUrl = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
+
+export async function getApiHealth(): Promise<HealthResponse> {
+  const response = await fetch(`${apiUrl}/health`);
+
+  if (!response.ok) {
+    throw new Error("API is not available");
+  }
+
+  return response.json() as Promise<HealthResponse>;
+}
+
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if (init?.method && init.method !== "GET" && !navigator.onLine) {
+    throw new Error(
+      "You’re offline. Sales and stock changes require an internet connection.",
+    );
+  }
+  const response = await fetch(`${apiUrl}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/auth/login"))
+      window.dispatchEvent(new Event("afia:unauthorized"));
+    const body = (await response.json().catch(() => null)) as {
+      message?: string | string[];
+    } | null;
+    const message = Array.isArray(body?.message)
+      ? body.message[0]
+      : body?.message;
+    throw new Error(message ?? "Something went wrong. Please try again.");
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function getInventorySummary() {
+  return apiRequest<InventorySummary>("/inventory/summary");
+}
+
+export function getInventoryItems(search = "") {
+  const query = new URLSearchParams({ search });
+  return apiRequest<InventoryItemSummary[]>(`/inventory/items?${query}`);
+}
+
+export function updateInventoryItem(id: string, input: UpdateProductRequest) {
+  return apiRequest(`/inventory/items/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function archiveInventoryItem(id: string) {
+  return apiRequest(`/inventory/items/${id}`, { method: "DELETE" });
+}
+
+export function updateInventoryVariant(
+  id: string,
+  input: UpdateVariantRequest,
+) {
+  return apiRequest(`/inventory/variants/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function archiveInventoryVariant(id: string) {
+  return apiRequest(`/inventory/variants/${id}`, { method: "DELETE" });
+}
+
+export function getCustomers(search = "") {
+  return apiRequest<CustomerSummary[]>(
+    `/customers?${new URLSearchParams({ search })}`,
+  );
+}
+export function getCustomer(id: string) {
+  return apiRequest<CustomerDetails>(`/customers/${id}`);
+}
+export function createCustomer(input: CustomerInput) {
+  return apiRequest("/customers", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function updateCustomer(id: string, input: CustomerInput) {
+  return apiRequest(`/customers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+export function archiveCustomer(id: string) {
+  return apiRequest(`/customers/${id}`, { method: "DELETE" });
+}
+export function getContainers(search = "") {
+  return apiRequest<ContainerSummary[]>(
+    `/containers?${new URLSearchParams({ search })}`,
+  );
+}
+export function updateContainer(id: string, input: ContainerUpdateInput) {
+  return apiRequest(`/containers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+export function archiveContainer(id: string) {
+  return apiRequest(`/containers/${id}`, { method: "DELETE" });
+}
+export function getSales(search = "") {
+  return apiRequest<SaleSummary[]>(`/sales?${new URLSearchParams({ search })}`);
+}
+export function getSaleDetails(id: string) {
+  return apiRequest<SaleInvoice>(`/sales/${id}`);
+}
+export async function downloadSaleInvoicePdf(id: string) {
+  const response = await fetch(`${apiUrl}/sales/${id}/pdf`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    if (response.status === 401)
+      window.dispatchEvent(new Event("afia:unauthorized"));
+    const body = (await response.json().catch(() => null)) as {
+      message?: string | string[];
+    } | null;
+    throw new Error(
+      Array.isArray(body?.message)
+        ? body.message[0]
+        : body?.message ?? "The invoice PDF could not be downloaded.",
+    );
+  }
+  const disposition = response.headers.get("Content-Disposition");
+  const filename = disposition?.match(/filename\*?=(?:UTF-8''|["']?)([^"';]+)/i)?.[1];
+  return {
+    blob: await response.blob(),
+    filename: filename ? decodeURIComponent(filename.trim()) : null,
+  };
+}
+export function createSale(input: CreateSaleRequest) {
+  return apiRequest<CreateSaleResponse>("/sales", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function getPurchases(search = "") {
+  return apiRequest<PurchaseSummary[]>(
+    `/purchases?${new URLSearchParams({ search })}`,
+  );
+}
+export function receiveCustomerPayment(
+  id: string,
+  input: ReceivePaymentRequest,
+) {
+  return apiRequest(`/customers/${id}/payments`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function voidSale(id: string, input: VoidSaleRequest) {
+  return apiRequest(`/sales/${id}/void`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function emailSaleInvoice(id: string) {
+  return apiRequest<{ sent: true; recipient: string; filename: string }>(
+    `/sales/${id}/email`,
+    { method: "POST" },
+  );
+}
+export function adjustStock(input: StockAdjustmentRequest) {
+  return apiRequest("/inventory/adjustments", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function reversePurchase(id: string, reason: string) {
+  return apiRequest(`/purchases/${id}/reverse`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+export function login(input: LoginRequest) {
+  return apiRequest<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function logout() {
+  return apiRequest<{ signedOut: true }>("/auth/logout", { method: "POST" });
+}
+export function getMe() {
+  return apiRequest<{ user: AuthUser }>("/auth/me");
+}
+export function getAccount() {
+  return apiRequest<AccountDetails>("/auth/account");
+}
+export function updateAccount(input: UpdateAccountRequest) {
+  return apiRequest<AccountDetails>("/auth/account", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+export function changePassword(input: ChangePasswordRequest) {
+  return apiRequest<{ passwordChanged: true }>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+export function globalSearch(q: string) {
+  return apiRequest<GlobalSearchGroup[]>(
+    `/search?${new URLSearchParams({ q })}`,
+  );
+}
+export function getSettings() {
+  return apiRequest<StoreSettingsContract>("/settings");
+}
+export function updateSettings(input: StoreSettingsContract) {
+  return apiRequest<StoreSettingsContract>("/settings", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getSuppliers(search = "") {
+  const query = new URLSearchParams({ search });
+  return apiRequest<SupplierSummary[]>(`/suppliers?${query}`);
+}
+
+export function getSupplier(id: string) {
+  return apiRequest<SupplierDetails>(`/suppliers/${id}`);
+}
+
+export function updateSupplier(id: string, input: SupplierInput) {
+  return apiRequest<SupplierSummary>(`/suppliers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function archiveSupplier(id: string) {
+  return apiRequest<{ id: string; archived: true }>(`/suppliers/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function getProducts(search = "") {
+  const query = new URLSearchParams({ search });
+  return apiRequest<ProductSearchResult[]>(`/products?${query}`);
+}
+
+export function createSupplier(input: CreateSupplierRequest) {
+  return apiRequest<SupplierSummary>("/suppliers", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function receivePurchase(input: ReceivePurchaseRequest) {
+  return apiRequest<ReceivePurchaseResponse>("/purchases/receive", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}

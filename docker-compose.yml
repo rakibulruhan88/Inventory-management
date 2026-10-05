@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: afia-inventory-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-afia_inventory}
+      POSTGRES_USER: ${POSTGRES_USER:-afia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-afia_local_password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - afia_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-afia} -d ${POSTGRES_DB:-afia_inventory}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  afia_postgres_data:
