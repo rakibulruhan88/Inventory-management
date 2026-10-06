@@ -1,3 +1,5 @@
+import { readSalesLedger } from './sales-ledger.js';
+import type { SalesLedgerQuery } from '@afia/contracts';
 import {
   BadRequestException,
   ConflictException,
@@ -32,6 +34,8 @@ export class SalesService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() @Inject(MailService) private readonly mail?: MailService,
   ) {}
+
+  ledger(query: SalesLedgerQuery) { return readSalesLedger(this.prisma, query); }
 
   async list(search = ''): Promise<SaleSummary[]> {
     const term = normalizeText(search);

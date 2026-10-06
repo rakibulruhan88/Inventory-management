@@ -1,3 +1,4 @@
+import { SalesLedgerQueryDto } from './ledger-query.dto.js';
 import {
   Body,
   Controller,
@@ -22,6 +23,9 @@ export class SalesController {
   constructor(@Inject(SalesService) private readonly sales: SalesService) {}
   @Get() list(@Query('search') search?: string) {
     return this.sales.list(search);
+  }
+  @Get('ledger') ledger(@Query() query: SalesLedgerQueryDto) {
+    return this.sales.ledger(query);
   }
   @Get(':id') details(@Param('id') id: string) {
     return this.sales.details(id);

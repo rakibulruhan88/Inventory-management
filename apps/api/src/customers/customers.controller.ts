@@ -1,3 +1,4 @@
+import { LedgerPageDto } from '../sales/ledger-query.dto.js';
 import {
   Body,
   Controller,
@@ -21,6 +22,9 @@ export class CustomersController {
   ) {}
   @Get() list(@Query('search') search?: string) {
     return this.customers.list(search);
+  }
+  @Get(':id/account') account(@Param('id') id: string, @Query() query: LedgerPageDto) {
+    return this.customers.account(id, query);
   }
   @Get(':id') details(@Param('id') id: string) {
     return this.customers.details(id);

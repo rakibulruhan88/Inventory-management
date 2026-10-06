@@ -359,3 +359,22 @@ export function getPurchase(id: string) { return apiRequest<PurchaseDetails>(`/p
 export function documentContentUrl(id: string, download = false) {
   return `${apiUrl}/documents/${encodeURIComponent(id)}/content${download ? '?download=true' : ''}`;
 }
+
+export function getSalesLedger(
+  query: import("@afia/contracts").SalesLedgerQuery,
+) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  });
+  return apiRequest<
+    import("@afia/contracts").LedgerPage<
+      import("@afia/contracts").SalesLedgerRow
+    >
+  >(`/sales/ledger?${params}`);
+}
+export function getCustomerAccount(id: string, page = 1) {
+  return apiRequest<import("@afia/contracts").CustomerAccount>(
+    `/customers/${encodeURIComponent(id)}/account?page=${page}&pageSize=25`,
+  );
+}

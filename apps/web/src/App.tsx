@@ -54,7 +54,7 @@ const CustomersPage = lazy(() =>
   })),
 );
 const CustomerDetailPage = lazy(() =>
-  import("@/features/records/records-pages").then((m) => ({
+  import("@/features/records/customer-account-page").then((m) => ({
     default: m.CustomerDetailPage,
   })),
 );
@@ -64,7 +64,7 @@ const ContainersPage = lazy(() =>
   })),
 );
 const SalesPage = lazy(() =>
-  import("@/features/records/records-pages").then((m) => ({
+  import("@/features/sales/sales-page").then((m) => ({
     default: m.SalesPage,
   })),
 );

@@ -3,27 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ContainerSummary,
   CustomerSummary,
-  PaymentHistory,
 } from "@afia/contracts";
-import {
-  createColumnHelper,
-  tableFeatures,
-  useTable,
-} from "@tanstack/react-table";
 import {
   Container,
   Edit3,
   Plus,
-  ReceiptText,
   Search,
   Trash2,
   Users,
   WalletCards,
-  ArrowLeft,
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Drawer } from "vaul";
 import { Button } from "@/components/ui/button";
@@ -34,8 +26,6 @@ import {
   createCustomer,
   getContainers,
   getCustomers,
-  getCustomer,
-  getSales,
   receiveCustomerPayment,
   updateContainer,
   updateCustomer,
@@ -80,110 +70,6 @@ function Title({
         <p className="mt-1 text-sm text-[var(--muted)]">{subtitle}</p>
       </div>
     </div>
-  );
-}
-const paymentFeatures = tableFeatures({});
-const paymentHelper = createColumnHelper<
-  typeof paymentFeatures,
-  PaymentHistory
->();
-const paymentColumns = paymentHelper.columns([
-  paymentHelper.accessor("receivedAt", {
-    header: "Date",
-    cell: ({ getValue }) => new Date(getValue()).toLocaleDateString("en-BD"),
-  }),
-  paymentHelper.accessor("amount", {
-    header: "Amount",
-    cell: ({ getValue }) => `৳${getValue().toLocaleString()}`,
-  }),
-  paymentHelper.accessor("method", {
-    header: "Method",
-    cell: ({ getValue }) => getValue().replace("_", " "),
-  }),
-  paymentHelper.accessor("invoiceNumber", {
-    header: "Invoice / Reference",
-    cell: ({ row, getValue }) =>
-      row.original.saleId ? (
-        <Link
-          className="text-[var(--accent)]"
-          to={`/sales/${row.original.saleId}/invoice`}
-        >
-          {getValue()}
-        </Link>
-      ) : (
-        row.original.reference || "—"
-      ),
-  }),
-  paymentHelper.accessor("notes", {
-    header: "Notes",
-    cell: ({ getValue }) => getValue() || "—",
-  }),
-]);
-function PaymentTable({ payments }: { payments: PaymentHistory[] }) {
-  const table = useTable({
-    features: paymentFeatures,
-    columns: paymentColumns,
-    data: payments,
-  });
-  if (!payments.length)
-    return (
-      <p className="py-8 text-center text-sm text-[var(--muted)]">
-        No payments recorded yet.
-      </p>
-    );
-  return (
-    <>
-      <div className="space-y-2 md:hidden">
-        {payments.map((payment) => (
-          <article
-            key={payment.id}
-            className="rounded-xl bg-[var(--surface-subtle)] p-3 text-sm"
-          >
-            <div className="flex justify-between">
-              <strong>৳{payment.amount.toLocaleString()}</strong>
-              <span>
-                {new Date(payment.receivedAt).toLocaleDateString("en-BD")}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              {payment.method.replace("_", " ")} ·{" "}
-              {payment.invoiceNumber || payment.reference || "No reference"}
-            </p>
-          </article>
-        ))}
-      </div>
-      <div className="hidden overflow-x-auto rounded-lg border border-[var(--border)] md:block">
-        <table className="w-full min-w-160 text-left text-sm">
-          <thead className="bg-[var(--surface-muted)] text-xs text-[var(--muted)]">
-            {table.getHeaderGroups().map((group) => (
-              <tr key={group.id}>
-                {group.headers.map((header) => (
-                  <th className="px-3 py-3 font-medium" key={header.id}>
-                    {header.isPlaceholder ? null : (
-                      <table.FlexRender header={header} />
-                    )}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                className="border-t border-[var(--border)] transition hover:bg-[var(--primary-soft)]"
-                key={row.id}
-              >
-                {row.getAllCells().map((cell) => (
-                  <td className="px-3 py-3" key={cell.id}>
-                    <table.FlexRender cell={cell} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 export function CustomersPage() {
@@ -260,7 +146,7 @@ export function CustomersPage() {
         <Title
           icon={Users}
           title="Customers"
-          subtitle="Sales, payments and current due."
+          subtitle="Sales, payments and customer outstanding."
         />
         <Button onClick={() => open("new")}>
           <Plus className="size-4" /> Add customer
@@ -279,7 +165,7 @@ export function CustomersPage() {
           >
             <div className="flex justify-between">
               <div>
-                <h2 className="font-semibold">{c.name}</h2>
+                <h2 className="font-semibold"><Link className="hover:underline focus-visible:outline-2 focus-visible:outline-[var(--accent)]" to={`/customers/${c.id}`}>{c.name}</Link></h2>
                 <p className="text-sm text-[var(--muted)]">
                   {c.phone || c.email || "No contact details"}
                 </p>
@@ -287,7 +173,7 @@ export function CustomersPage() {
                   className="mt-2 inline-block text-xs font-medium text-[var(--accent)]"
                   to={`/customers/${c.id}`}
                 >
-                  View history
+                  View account
                 </Link>
               </div>
               <div>
@@ -316,7 +202,7 @@ export function CustomersPage() {
                 <strong>৳{c.totalPaid.toLocaleString()}</strong>
               </span>
               <span>
-                Due
+                Outstanding
                 <br />
                 <strong className="text-[var(--warning)]">
                   ৳{c.totalDue.toLocaleString()}
@@ -486,70 +372,6 @@ export function CustomersPage() {
     </Page>
   );
 }
-export function CustomerDetailPage() {
-  const { id = "" } = useParams();
-  const customer = useQuery({
-    queryKey: ["customer", id],
-    queryFn: () => getCustomer(id),
-    enabled: !!id,
-  });
-  if (customer.isLoading)
-    return (
-      <div className="grid min-h-80 place-items-center text-sm text-[var(--muted)]">
-        Loading customer…
-      </div>
-    );
-  if (!customer.data)
-    return (
-      <div className="grid min-h-80 place-items-center">
-        Customer not found.
-      </div>
-    );
-  const c = customer.data;
-  return (
-    <Page>
-      <Link
-        to="/customers"
-        className="flex min-h-11 items-center gap-2 text-sm text-[var(--muted)]"
-      >
-        <ArrowLeft className="size-4" /> Customers
-      </Link>
-      <div className="mt-3">
-        <Title
-          icon={Users}
-          title={c.name}
-          subtitle={
-            [c.phone, c.email, c.address].filter(Boolean).join(" · ") ||
-            "No contact details"
-          }
-        />
-      </div>
-      <section className="mt-6 grid grid-cols-3 gap-3">
-        {[
-          ["Total Sales", c.totalSales],
-          ["Total Paid", c.totalPaid],
-          ["Outstanding Due", c.totalDue],
-        ].map(([label, value]) => (
-          <article
-            key={String(label)}
-            className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)]"
-          >
-            <p className="text-xs text-[var(--muted)]">{label}</p>
-            <strong className="mt-2 block text-lg">
-              ৳{Number(value).toLocaleString()}
-            </strong>
-          </article>
-        ))}
-      </section>
-      <section className="mt-5 rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)]">
-        <h2 className="font-semibold">Payment History</h2>
-        <div className="mt-3">
-          <PaymentTable payments={c.payments} />
-        </div>
-      </section>
-    </Page>
-  );
-}
 export function ContainersPage() {
   const [params] = useSearchParams();
   const qc = useQueryClient();
@@ -673,52 +495,6 @@ export function ContainersPage() {
           onConfirm={() => remove.mutate(confirm.id)}
         />
       )}
-    </Page>
-  );
-}
-export function SalesPage() {
-  const [search, setSearch] = useState("");
-  const q = useQuery({
-    queryKey: ["sales", search],
-    queryFn: () => getSales(search),
-  });
-  return (
-    <Page>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <Title
-          icon={ReceiptText}
-          title="Sales"
-          subtitle="Invoices, payments and customer due."
-        />
-        <Button asChild>
-          <Link to="/sales/new">
-            <Plus className="size-4" /> New Sale
-          </Link>
-        </Button>
-      </div>
-      <SearchBox
-        value={search}
-        onChange={setSearch}
-        placeholder="Search invoice, customer, phone or item..."
-      />
-      <div className="mt-5 space-y-3">
-        {q.data?.map((s) => (
-          <Link
-            key={s.id}
-            to={`/sales/${s.id}/invoice`}
-            className="grid gap-3 rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)] transition hover:border-[var(--primary-border)] sm:grid-cols-[1fr_auto_auto]"
-          >
-            <div>
-              <strong>{s.invoiceNumber}</strong>
-              <p className="text-sm text-[var(--muted)]">{s.customerName}</p>
-            </div>
-            <span>৳{s.totalAmount.toLocaleString()}</span>
-            <span className="font-medium text-[var(--warning)]">
-              Due ৳{s.dueAmount.toLocaleString()}
-            </span>
-          </Link>
-        ))}
-      </div>
     </Page>
   );
 }

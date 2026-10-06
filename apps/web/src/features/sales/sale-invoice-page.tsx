@@ -284,6 +284,11 @@ export function SaleInvoicePage() {
           </Link>
         </Button>
         <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link to={`/customers/${invoice.customerId}`}>
+              Customer account
+            </Link>
+          </Button>
           {invoice.currentCustomerEmail ? (
             <Button
               variant="outline"

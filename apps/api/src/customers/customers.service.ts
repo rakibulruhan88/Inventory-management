@@ -1,3 +1,6 @@
+import { readLedgerPage } from '../sales/sales-ledger.js';
+import type { CustomerAccount } from '@afia/contracts';
+import type { LedgerPageDto } from '../sales/ledger-query.dto.js';
 import {
   ConflictException,
   Inject,
@@ -119,6 +122,64 @@ export class CustomersService {
         status: sale.status,
       })),
     };
+  }
+  async account(id: string, query: LedgerPageDto): Promise<CustomerAccount> {
+    // Summary and all histories share one read snapshot, even during a payment.
+    return this.prisma.$transaction(
+      async (tx) => {
+        const customer = await tx.customer.findUnique({ where: { id } });
+        if (!customer) throw new NotFoundException('Customer not found.');
+        const page = query.page ?? 1,
+          pageSize = query.pageSize ?? 25;
+        const [totals, sales, outstandingInvoices, paymentTotal, records] =
+          await Promise.all([
+            tx.sale.aggregate({
+              where: { customerId: id, status: 'COMPLETED' },
+              _sum: { totalAmount: true, paidAmount: true },
+            }),
+            readLedgerPage(tx, { customerId: id, page, pageSize }),
+            readLedgerPage(tx, { customerId: id, page, pageSize }, true),
+            tx.payment.count({ where: { customerId: id, voidedAt: null } }),
+            tx.payment.findMany({
+              where: { customerId: id, voidedAt: null },
+              include: { sale: { select: { id: true, invoiceNumber: true } } },
+              orderBy: [{ receivedAt: 'desc' }, { id: 'asc' }],
+              take: pageSize,
+              skip: (page - 1) * pageSize,
+            }),
+          ]);
+        const totalSales = Number(totals._sum.totalAmount ?? 0);
+        const totalPaid = Number(totals._sum.paidAmount ?? 0);
+        return {
+          id,
+          name: customer.name,
+          phone: customer.phone,
+          email: customer.email,
+          address: customer.address,
+          totalSales,
+          totalPaid,
+          totalDue: money(totalSales - totalPaid),
+          sales,
+          outstandingInvoices,
+          payments: {
+            total: paymentTotal,
+            page,
+            pageSize,
+            items: records.map((p) => ({
+              id: p.id,
+              receivedAt: p.receivedAt.toISOString(),
+              amount: Number(p.amount),
+              method: p.method,
+              reference: p.reference,
+              notes: p.notes,
+              invoiceNumber: p.sale?.invoiceNumber ?? null,
+              saleId: p.saleId,
+            })),
+          },
+        };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
   }
   async create(input: CustomerInput) {
     return this.write(undefined, input);

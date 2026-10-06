@@ -440,3 +440,24 @@ export function validPurchaseDate(value: unknown): value is string {
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
+
+// Additive read-only ledger contracts; existing list/detail responses remain intact.
+export type SalesLedgerQuery = {
+  search?: string; customer?: string; phone?: string; customerId?: string;
+  invoice?: string; product?: string;
+  date?: "today" | "yesterday" | "week" | "month" | "specific" | "range";
+  from?: string; to?: string;
+  status?: "PAID" | "PARTIAL" | "UNPAID" | "VOIDED";
+  method?: "CASH" | "BANK" | "MOBILE_BANKING" | "OTHER";
+  minTotal?: number; maxTotal?: number; minDue?: number; maxDue?: number;
+  sort?: "newest" | "oldest" | "highest-total" | "lowest-total" | "highest-due";
+  page?: number; pageSize?: number;
+};
+export type SalesLedgerRow = SaleSummary & { customerId: string; customerPhone: string | null };
+export type LedgerPage<T> = { items: T[]; page: number; pageSize: number; total: number };
+export type CustomerAccount = CustomerSummary & {
+  sales: LedgerPage<SalesLedgerRow>;
+  outstandingInvoices: LedgerPage<SalesLedgerRow>;
+  payments: LedgerPage<PaymentHistory>;
+};
+export const SALES_BUSINESS_TIMEZONE = "Asia/Dhaka";

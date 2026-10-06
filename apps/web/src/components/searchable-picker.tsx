@@ -25,6 +25,7 @@ type SearchablePickerProps = {
   compact?: boolean;
   triggerClassName?: string;
   purchasePresentation?: boolean;
+  nestedDrawer?: boolean;
 };
 
 function PickerCommand({
@@ -124,6 +125,7 @@ export function SearchablePicker({
   compact = false,
   triggerClassName,
   purchasePresentation = false,
+  nestedDrawer = false,
 }: SearchablePickerProps) {
   const [open, setOpen] = useState(false);
   const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -193,8 +195,9 @@ export function SearchablePicker({
     );
   }
 
+  const MobileDrawerRoot = nestedDrawer ? Drawer.NestedRoot : Drawer.Root;
   return (
-    <Drawer.Root open={open} onOpenChange={setOpen}>
+    <MobileDrawerRoot open={open} onOpenChange={setOpen}>
       <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
@@ -224,6 +227,6 @@ export function SearchablePicker({
           <div className="h-[max(16px,env(safe-area-inset-bottom))]" />
         </Drawer.Content>
       </Drawer.Portal>
-    </Drawer.Root>
+    </MobileDrawerRoot>
   );
 }
