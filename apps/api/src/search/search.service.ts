@@ -16,9 +16,13 @@ export class SearchService {
             OR: [
               { itemCode: { contains: q, mode: 'insensitive' } },
               { name: { contains: q, mode: 'insensitive' } },
+              { description: { contains: q, mode: 'insensitive' } },
               {
                 variants: {
-                  some: { color: { contains: q, mode: 'insensitive' } },
+                  some: { OR: [
+                    { color: { contains: q, mode: 'insensitive' } },
+                    { batches: { some: { container: { containerNumber: { contains: q, mode: 'insensitive' } } } } },
+                  ] },
                 },
               },
             ],
@@ -86,7 +90,7 @@ export class SearchService {
         type: 'product' as const,
         id: x.id,
         title: x.itemCode,
-        subtitle: x.name || 'Leather item',
+        subtitle: x.description || x.name || 'Leather item',
         path: `/inventory?search=${encodeURIComponent(q)}`,
       })),
       ...sales.map((x) => ({

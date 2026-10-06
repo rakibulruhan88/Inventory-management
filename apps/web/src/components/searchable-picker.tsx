@@ -23,6 +23,8 @@ type SearchablePickerProps = {
   onChange: (value: string) => void;
   onSearchChange?: (search: string) => void;
   compact?: boolean;
+  triggerClassName?: string;
+  purchasePresentation?: boolean;
 };
 
 function PickerCommand({
@@ -31,9 +33,10 @@ function PickerCommand({
   searchPlaceholder,
   onSelect,
   onSearchChange,
+  purchasePresentation = false,
 }: Pick<
   SearchablePickerProps,
-  "options" | "value" | "searchPlaceholder" | "onSearchChange"
+  "options" | "value" | "searchPlaceholder" | "onSearchChange" | "purchasePresentation"
 > & {
   onSelect: (value: string) => void;
 }) {
@@ -49,12 +52,16 @@ function PickerCommand({
         <Search className="size-4 shrink-0 text-[var(--muted)]" />
         <Command.Input
           autoFocus
-          className="h-13 w-full bg-transparent text-[15px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+          aria-label={searchPlaceholder ?? "Type to search..."}
+          className={cn(
+            "w-full bg-transparent text-[15px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]",
+            purchasePresentation ? "my-2 h-9 min-w-0 rounded-sm border border-transparent px-2" : "h-13",
+          )}
           placeholder={searchPlaceholder ?? "Type to search..."}
           onValueChange={onSearchChange}
         />
       </div>
-      <Command.List className="max-h-[min(420px,60vh)] overflow-y-auto p-2">
+      <Command.List className={cn("overflow-y-auto p-2", purchasePresentation ? "min-h-0 max-h-72 flex-1 overscroll-contain" : "max-h-[min(420px,60vh)]")}>
         <Command.Empty className="px-4 py-10 text-center text-sm text-[var(--muted)]">
           Nothing found. Try another name or code.
         </Command.Empty>
@@ -71,16 +78,19 @@ function PickerCommand({
                   .filter(Boolean)
                   .join(" ")}
                 onSelect={() => onSelect(option.value)}
-                className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3.5 outline-none data-[selected=true]:bg-[var(--primary-soft)]"
+                className={cn(
+                  "group flex cursor-pointer items-center gap-3 outline-none data-[selected=true]:bg-[var(--primary-soft)]",
+                  purchasePresentation ? "min-h-11 rounded-md px-2.5 py-2" : "rounded-lg px-3 py-3.5",
+                )}
               >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--accent)]">
+                {purchasePresentation ? null : <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--accent)]">
                   <Check
                     className={cn(
                       "size-4",
                       value === option.value ? "opacity-100" : "opacity-0",
                     )}
                   />
-                </span>
+                </span>}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-[var(--ink)]">
                     {option.label}
@@ -91,6 +101,9 @@ function PickerCommand({
                     </span>
                   ) : null}
                 </span>
+                {purchasePresentation && value === option.value ? (
+                  <Check aria-hidden="true" className="size-4 shrink-0 text-[var(--accent)]" />
+                ) : null}
               </Command.Item>
             ))}
           </div>
@@ -109,6 +122,8 @@ export function SearchablePicker({
   onChange,
   onSearchChange,
   compact = false,
+  triggerClassName,
+  purchasePresentation = false,
 }: SearchablePickerProps) {
   const [open, setOpen] = useState(false);
   const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -125,6 +140,7 @@ export function SearchablePicker({
       className={cn(
         "flex items-center rounded-lg border border-[var(--input)] bg-white text-left shadow-sm outline-none transition hover:border-[var(--primary-border)] focus-visible:border-[var(--primary)] focus-visible:ring-2 focus-visible:ring-[rgb(37_99_235/0.16)]",
         compact ? "size-11 justify-center" : "min-h-13 w-full gap-3 px-4",
+        triggerClassName,
       )}
     >
       <Search className="size-5 shrink-0 text-[var(--accent)]" />
@@ -153,8 +169,15 @@ export function SearchablePicker({
         <Popover.Portal>
           <Popover.Content
             align="start"
-            sideOffset={8}
-            className="z-50 w-[var(--radix-popover-trigger-width)] min-w-100 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[var(--shadow-float)]"
+            side="bottom"
+            sideOffset={purchasePresentation ? 4 : 8}
+            collisionPadding={purchasePresentation ? 12 : undefined}
+            className={cn(
+              "z-50 w-[var(--radix-popover-trigger-width)] overflow-hidden border border-[var(--border)] bg-white",
+              purchasePresentation
+                ? "purchase-form-controls flex max-h-[min(360px,var(--radix-popover-content-available-height))] flex-col rounded-md shadow-md"
+                : "min-w-100 rounded-xl shadow-[var(--shadow-float)]",
+            )}
           >
             <PickerCommand
               options={options}
@@ -162,6 +185,7 @@ export function SearchablePicker({
               searchPlaceholder={searchPlaceholder}
               onSearchChange={onSearchChange}
               onSelect={selectValue}
+              purchasePresentation={purchasePresentation}
             />
           </Popover.Content>
         </Popover.Portal>
@@ -174,7 +198,7 @@ export function SearchablePicker({
       <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88svh] flex-col rounded-t-2xl border-t border-[var(--border)] bg-white outline-none">
+        <Drawer.Content className={cn("fixed inset-x-0 bottom-0 z-50 flex max-h-[88svh] flex-col rounded-t-2xl border-t border-[var(--border)] bg-white outline-none", purchasePresentation && "purchase-form-controls")}>
           <div className="mx-auto mt-3 h-1.5 w-10 rounded-full bg-[var(--border-strong)]" />
           <div className="flex items-center justify-between px-5 py-4">
             <Drawer.Title className="font-semibold text-[var(--ink)]">
@@ -195,6 +219,7 @@ export function SearchablePicker({
             searchPlaceholder={searchPlaceholder}
             onSearchChange={onSearchChange}
             onSelect={selectValue}
+            purchasePresentation={purchasePresentation}
           />
           <div className="h-[max(16px,env(safe-area-inset-bottom))]" />
         </Drawer.Content>

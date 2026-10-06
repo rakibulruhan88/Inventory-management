@@ -74,7 +74,7 @@ export function createInvoicePdf(invoice: SaleInvoice): Promise<Buffer> {
     for (const line of invoice.lines) {
       if (rowY + 42 > document.page.height - 60) { document.addPage(); rowY = tableHeader(44); }
       document.font('Helvetica-Bold').fontSize(8.5).fillColor(colors.navy).text(line.itemCode, left + 8, rowY + 9, { width: columnWidths[0] - 16 });
-      if (line.itemName) document.font('Helvetica').fontSize(7.5).fillColor(colors.muted).text(line.itemName, left + 8, rowY + 22, { width: columnWidths[0] - 16 });
+      if (line.description || line.itemName) document.font('Helvetica').fontSize(7.5).fillColor(colors.muted).text(line.description || line.itemName || '', left + 8, rowY + 22, { width: columnWidths[0] - 16 });
       document.font('Helvetica').fontSize(8.5).fillColor(colors.body).text(line.color, left + columns[1] + 8, rowY + 12, { width: columnWidths[1] - 16 });
       document.text(String(line.rollsSold), left + columns[2] + 8, rowY + 12, { width: columnWidths[2] - 16, align: 'right' });
       document.text(line.meterSold?.toLocaleString('en-BD') ?? '—', left + columns[3] + 8, rowY + 12, { width: columnWidths[3] - 16, align: 'right' });

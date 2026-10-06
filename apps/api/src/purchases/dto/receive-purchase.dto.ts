@@ -1,5 +1,6 @@
 import type {
   ReceivePurchaseItem,
+  ReceivePurchaseColor,
   ReceivePurchaseRequest,
 } from '@afia/contracts';
 import { Type } from 'class-transformer';
@@ -7,7 +8,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
-  IsHexColor,
   IsInt,
   IsNumber,
   IsOptional,
@@ -18,14 +18,20 @@ import {
 } from 'class-validator';
 import { InlinePartyDto } from '../../common/inline-party.dto.js';
 
-export class ReceivePurchaseItemDto implements ReceivePurchaseItem {
-  @IsString() @MinLength(1) itemCode: string;
-  @IsOptional() @IsString() name?: string;
+export class ReceivePurchaseColorDto implements ReceivePurchaseColor {
   @IsString() @MinLength(1) color: string;
-  @IsHexColor() colorCode: string;
-  @IsOptional() @IsString() size?: string;
   @IsInt() @Min(1) rolls: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) totalMeter?: number;
+}
+
+export class ReceivePurchaseItemDto implements ReceivePurchaseItem {
+  @IsString() @MinLength(1) itemCode: string;
+  @IsOptional() @IsString() description?: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ReceivePurchaseColorDto)
+  colors: ReceivePurchaseColorDto[];
 }
 
 export class ReceivePurchaseDto implements ReceivePurchaseRequest {

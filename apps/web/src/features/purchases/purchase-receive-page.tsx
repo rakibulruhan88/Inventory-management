@@ -26,25 +26,12 @@ import { Input } from "@/components/ui/input";
 import { getProducts, getSuppliers, receivePurchase } from "@/lib/api";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
-const commonColors: Record<string, string> = {
-  black: "#000000",
-  white: "#FFFFFF",
-  red: "#C0392B",
-  brown: "#8B5A2B",
-  green: "#2E7D32",
-  blue: "#1565C0",
-  grey: "#808080",
-  gray: "#808080",
-  beige: "#F5F5DC",
-  tan: "#D2B48C",
-  navy: "#000080",
-};
+import { InvoiceImportPanel } from "./invoice-import-panel";
+
 const normalizeVariantPart = (value = "") =>
   value.trim().toLocaleLowerCase().replace(/\s+/g, "");
 const colorRowSchema = z.object({
-  size: z.string().optional(),
   color: z.string().trim().min(1, "Color is required."),
-  colorCode: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a 6-digit hex color."),
   rolls: z.number().int().positive("Enter at least one roll."),
   totalMeter: z.number().min(0, "Meter cannot be negative."),
 });
@@ -52,19 +39,19 @@ const itemGroupSchema = z
   .object({
     productId: z.string().optional(),
     itemCode: z.string().trim().min(1, "Item code is required."),
-    name: z.string().optional(),
+    description: z.string().optional(),
     colors: z.array(colorRowSchema).min(1),
   })
   .superRefine((item, context) => {
     const variants = new Set<string>();
     item.colors.forEach((color, index) => {
       if (!color.color.trim()) return;
-      const key = `${normalizeVariantPart(color.color)}::${normalizeVariantPart(color.size)}`;
+      const key = normalizeVariantPart(color.color);
       if (variants.has(key)) {
         context.addIssue({
           code: "custom",
           path: ["colors", index, "color"],
-          message: "This color and size is already in this item.",
+          message: "This Color Code is already in this item.",
         });
       }
       variants.add(key);
@@ -111,21 +98,22 @@ const schema = z
   });
 type FormData = z.infer<typeof schema>;
 const newColor = (): FormData["items"][number]["colors"][number] => ({
-  size: "",
   color: "",
-  colorCode: "#8B5A2B",
   rolls: 1,
   totalMeter: 0,
 });
 const newItem = (): FormData["items"][number] => ({
   productId: undefined,
   itemCode: "",
-  name: "",
+  description: "",
   colors: [newColor()],
 });
 
 export function PurchaseReceivePage() {
   const navigate = useNavigate();
+  const [reviewDirty, setReviewDirty] = useState(false);
+  const [reviewDiscardVersion, setReviewDiscardVersion] = useState(0);
+  const [entryMode, setEntryMode] = useState<"manual" | "import">("manual");
   const qc = useQueryClient();
   const [supplierSearch, setSupplierSearch] = useState("");
   const [productSearch, setProductSearch] = useState("");
@@ -171,7 +159,7 @@ export function PurchaseReceivePage() {
     mutationFn: receivePurchase,
     onSuccess: async (r) => {
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["inventory"] }),
+        qc.invalidateQueries({ queryKey: ["inventory-items"] }),
         qc.invalidateQueries({ queryKey: ["inventory-summary"] }),
         qc.invalidateQueries({ queryKey: ["products"] }),
         qc.invalidateQueries({ queryKey: ["purchases"] }),
@@ -188,9 +176,7 @@ export function PurchaseReceivePage() {
     save.mutate({
       ...purchase,
       purchasedAt: new Date(`${v.purchasedAt}T12:00:00`).toISOString(),
-      items: itemGroups.flatMap(({ itemCode, name, colors }) =>
-        colors.map((color) => ({ itemCode, name, ...color })),
-      ),
+      items: itemGroups.map(({ itemCode, description, colors }) => ({ itemCode, description, colors })),
     });
   };
   const supplierSuggestions: PartySuggestion[] = (suppliers.data ?? []).map(
@@ -209,8 +195,8 @@ export function PurchaseReceivePage() {
         {
           value: x.productId,
           label: x.itemCode,
-          description: x.name || "Saved item",
-          keywords: [x.name || "", x.color || ""],
+          description: x.description || "Saved item",
+          keywords: [x.description || "", x.color || ""],
         },
       ]),
     ).values(),
@@ -235,19 +221,12 @@ export function PurchaseReceivePage() {
       shouldValidate: true,
     });
     form.setValue(`items.${index}.itemCode`, p.itemCode);
-    form.setValue(`items.${index}.name`, p.name ?? "");
+    form.setValue(`items.${index}.description`, p.description ?? "");
   };
   const setColor = (itemIndex: number, colorIndex: number, value: string) => {
     form.setValue(`items.${itemIndex}.colors.${colorIndex}.color`, value, {
       shouldValidate: true,
     });
-    const hex = commonColors[value.trim().toLowerCase()];
-    if (hex)
-      form.setValue(
-        `items.${itemIndex}.colors.${colorIndex}.colorCode`,
-        hex,
-        { shouldValidate: true },
-      );
   };
   const addColor = (itemIndex: number) => {
     const colors = form.getValues(`items.${itemIndex}.colors`);
@@ -261,27 +240,37 @@ export function PurchaseReceivePage() {
     );
   };
   return (
-    <div className="mx-auto max-w-5xl px-4 pb-32 pt-5 md:px-7 lg:px-10">
+    <div className="mx-auto max-w-350 px-4 pb-32 pt-5 md:px-7 lg:px-8">
       <Link
         to="/purchases"
-        className="flex min-h-11 items-center gap-2 text-sm text-[var(--muted)]"
+        className="inline-flex min-h-11 items-center gap-2 text-sm text-[var(--muted)] transition-colors hover:text-[var(--primary)]"
       >
         <ArrowLeft className="size-4" /> Purchases
       </Link>
-      <div className="mt-3 flex gap-4">
-        <span className="grid size-11 place-items-center rounded-xl bg-[var(--surface-warm)] text-[var(--accent)]">
-          <PackagePlus className="size-5" />
-        </span>
+      <div className="mt-2">
         <div>
-          <h1 className="text-2xl font-semibold sm:text-3xl">Receive stock</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Receive stock</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
             Add each item once, then enter all of its colors together.
           </p>
         </div>
       </div>
-      <form onSubmit={form.handleSubmit(submit)} className="mt-7 space-y-5">
-        <section className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5">
+      <div className="mt-5 flex flex-wrap gap-2" role="group" aria-label="Stock entry method">
+        <Button type="button" variant={entryMode === "manual" ? "primary" : "outline"} aria-pressed={entryMode === "manual"} onClick={() => {
+          if (reviewDirty && !window.confirm("Discard unsaved import review edits and enter manually?")) return;
+          if (reviewDirty) setReviewDiscardVersion(v => v + 1);
+          setEntryMode("manual");
+        }}>Enter Manually</Button>
+        <Button type="button" variant={entryMode === "import" ? "primary" : "outline"} aria-pressed={entryMode === "import"} onClick={() => setEntryMode("import")}>Import Commercial Invoice</Button>
+      </div>
+      <div hidden={entryMode !== "import"}><InvoiceImportPanel onDirtyChange={setReviewDirty} discardVersion={reviewDiscardVersion} /></div>
+      <div hidden={entryMode !== "manual"}>
+      <form onSubmit={form.handleSubmit(submit)} className="purchase-form-controls mt-5 space-y-5">
+        <section aria-label="Purchase information" className="grid border border-[var(--border)] bg-[var(--surface)] xl:grid-cols-2">
+          <div className="min-w-0 p-4 sm:p-5">
           <InlinePartyFields
+            dense
+            autoComplete="off"
             kind="Supplier"
             values={
               (supplier ?? {
@@ -333,37 +322,51 @@ export function PurchaseReceivePage() {
               form.setValue("supplier.id", undefined);
             }}
           />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-medium">
-              Container number
+          <PurchaseFieldError message={form.formState.errors.supplier?.email?.message} />
+          </div>
+          <div className="min-w-0 border-t border-[var(--border)] p-4 sm:p-5 xl:border-t-0 xl:border-l">
+          <h2 className="text-sm font-semibold">Container & reference</h2>
+          <p className="mt-1 text-xs text-[var(--muted)]">Enter the Commercial Invoice Contract No. as Container Number.</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <label className="min-w-0 text-xs font-medium">
+              Container Number
               <Input
-                className="mt-2"
-                placeholder="CN-1009"
+                className="mt-1 h-11 min-w-0"
+                placeholder="B0312614"
                 {...form.register("containerNumber")}
               />
+              <PurchaseFieldError message={form.formState.errors.containerNumber?.message} />
             </label>
-            <label className="text-sm font-medium">
+            <label className="min-w-0 text-xs font-medium">
               Reference / invoice
-              <Input className="mt-2" {...form.register("purchaseNumber")} />
+              <Input className="mt-1 h-11 min-w-0" {...form.register("purchaseNumber")} />
+              <PurchaseFieldError message={form.formState.errors.purchaseNumber?.message} />
             </label>
-            <label className="text-sm font-medium">
+            <label className="min-w-0 text-xs font-medium">
               Purchase date
               <Input
-                className="mt-2"
+                className="mt-1 h-11 min-w-0"
                 type="date"
                 {...form.register("purchasedAt")}
               />
+              <PurchaseFieldError message={form.formState.errors.purchasedAt?.message} />
             </label>
-            <label className="text-sm font-medium">
+            <label className="min-w-0 text-xs font-medium">
               Note{" "}
               <span className="font-normal text-[var(--muted)]">
                 (optional)
               </span>
-              <Input className="mt-2" {...form.register("notes")} />
+              <Input className="mt-1 h-11 min-w-0" {...form.register("notes")} />
             </label>
           </div>
+          </div>
         </section>
-        <div ref={list} className="space-y-4">
+        <section aria-labelledby="received-items-heading" className="border border-[var(--border)] bg-[var(--surface)]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-4 sm:px-5">
+            <div><h2 id="received-items-heading" className="text-base font-semibold">Received items</h2><p className="mt-1 text-xs text-[var(--muted)]">Choose a saved item or enter a new code. Add its colors below.</p></div>
+            <span className="text-xs text-[var(--muted)]">{fields.fields.length} {fields.fields.length === 1 ? "item" : "items"}</span>
+          </div>
+        <div ref={list}>
           {fields.fields.map((field, itemIndex) => {
             const item = items?.[itemIndex];
             const error = form.formState.errors.items?.[itemIndex];
@@ -379,30 +382,34 @@ export function PurchaseReceivePage() {
             return (
               <section
                 key={field.id}
-                className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5"
+                className="border-b border-[var(--border)] p-4 sm:p-5"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-[var(--accent)]">
+                    <h3 className="text-sm font-semibold text-[var(--primary)]">
                       Item {itemIndex + 1}
-                    </p>
-                    <h2 className="mt-1 font-semibold">Item details</h2>
+                    </h3>
                   </div>
                   {fields.fields.length > 1 && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label={`Remove item ${itemIndex + 1}`}
                       onClick={() => fields.remove(itemIndex)}
                     >
                       <Trash2 className="size-4" />
                     </Button>
                   )}
                 </div>
-                <div className="mt-4">
+                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+                <div className="min-w-0">
+                  <p className="mb-1 text-xs font-medium">Existing item</p>
                   <SearchablePicker
+                    purchasePresentation
+                    triggerClassName="min-h-11 rounded-md px-3 shadow-none"
                     label="Existing item"
-                    placeholder="Search item code or name..."
+                    placeholder="Search item code or description..."
                     searchPlaceholder="Search items..."
                     options={availableProductOptions}
                     value={item?.productId}
@@ -415,12 +422,13 @@ export function PurchaseReceivePage() {
                     </span>
                   )}
                 </div>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <label className="text-sm font-medium">
+                <div className="grid min-w-0 grid-cols-2 gap-3">
+                  <label className="min-w-0 text-xs font-medium">
                     Item code
                     <Input
-                      className="mt-2"
+                      className="mt-1 h-11 min-w-0"
                       placeholder="AL-101"
+                      readOnly={Boolean(item?.productId)}
                       {...form.register(`items.${itemIndex}.itemCode`)}
                     />
                     {error?.itemCode && (
@@ -429,32 +437,35 @@ export function PurchaseReceivePage() {
                       </span>
                     )}
                   </label>
-                  <label className="text-sm font-medium">
-                    Item name
+                  <label className="min-w-0 text-xs font-medium">
+                    Description / Size
                     <Input
-                      className="mt-2"
-                      placeholder="Premium cow leather"
-                      {...form.register(`items.${itemIndex}.name`)}
+                      className="mt-1 h-11 min-w-0"
+                      placeholder='1.2mm*54"*36.5m'
+                      readOnly={Boolean(item?.productId)}
+                      {...form.register(`items.${itemIndex}.description`)}
                     />
+                    {item?.productId && <span className="mt-1 block font-normal text-[var(--muted)]">Saved item description. Change it in Inventory before receiving if needed.</span>}
                   </label>
                 </div>
-                <div className="mt-5 border-t border-[var(--border)] pt-5">
+                </div>
+                <div className="mt-4 border-t border-[var(--border)] pt-3">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Colors and stock</h3>
+                    <h4 className="text-xs font-semibold">Colors and stock</h4>
                     <span className="text-xs text-[var(--muted)]">
                       {item?.colors?.length ?? 0} color(s)
                     </span>
                   </div>
-                  <div className="space-y-3">
+                  <div className="divide-y divide-[var(--border)]">
                     {(item?.colors ?? []).map((color, colorIndex) => {
                       const colorError = error?.colors?.[colorIndex];
                       return (
                         <div
                           key={colorIndex}
-                          className="rounded-lg bg-[var(--surface-subtle)] p-3"
+                          className="py-3 first:pt-0"
                         >
                           <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">
+                            <p className="text-xs font-medium text-[var(--muted)]">
                               Color {colorIndex + 1}
                             </p>
                             {(item?.colors?.length ?? 0) > 1 && (
@@ -462,6 +473,7 @@ export function PurchaseReceivePage() {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
+                                aria-label={`Remove color ${colorIndex + 1} from item ${itemIndex + 1}`}
                                 onClick={() =>
                                   removeColor(itemIndex, colorIndex)
                                 }
@@ -470,12 +482,12 @@ export function PurchaseReceivePage() {
                               </Button>
                             )}
                           </div>
-                          <div className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-5">
-                            <label className="col-span-2 text-sm font-medium lg:col-span-1">
-                              Color name
+                          <div className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                            <label className="min-w-0 text-xs font-medium">
+                              Color Code
                               <Input
-                                className="mt-1 h-9"
-                                placeholder="Black"
+                                className="mt-1 h-11 min-w-0"
+                                placeholder="02#Pine green"
                                 value={color.color ?? ""}
                                 onChange={(event) =>
                                   setColor(
@@ -491,43 +503,10 @@ export function PurchaseReceivePage() {
                                 </span>
                               )}
                             </label>
-                            <label className="col-span-2 text-sm font-medium lg:col-span-1">
-                              Color code
-                              <div className="mt-1 flex gap-2">
-                                <span
-                                  className="size-9 shrink-0 rounded-lg border border-[var(--border)]"
-                                  style={{ background: color.colorCode }}
-                                />
-                                <Input
-                                  className="h-9"
-                                  {...form.register(
-                                    `items.${itemIndex}.colors.${colorIndex}.colorCode`,
-                                  )}
-                                />
-                              </div>
-                              {colorError?.colorCode && (
-                                <span className="text-xs text-[var(--danger)]">
-                                  {colorError.colorCode.message}
-                                </span>
-                              )}
-                            </label>
-                            <label className="text-sm font-medium">
-                              Size{" "}
-                              <span className="font-normal text-[var(--muted)]">
-                                (optional)
-                              </span>
-                              <Input
-                                className="mt-1 h-9"
-                                placeholder="e.g. 1.2–1.4 mm"
-                                {...form.register(
-                                  `items.${itemIndex}.colors.${colorIndex}.size`,
-                                )}
-                              />
-                            </label>
-                            <label className="text-sm font-medium">
+                            <label className="min-w-0 text-xs font-medium">
                               Rolls
                               <Input
-                                className="mt-1 h-9"
+                                className="mt-1 h-11 min-w-0"
                                 type="number"
                                 min="1"
                                 inputMode="numeric"
@@ -536,14 +515,15 @@ export function PurchaseReceivePage() {
                                   { valueAsNumber: true },
                                 )}
                               />
+                              <PurchaseFieldError message={colorError?.rolls?.message} />
                             </label>
-                            <label className="text-sm font-medium">
+                            <label className="min-w-0 text-xs font-medium">
                               Meter{" "}
                               <span className="font-normal text-[var(--muted)]">
                                 (optional)
                               </span>
                               <Input
-                                className="mt-1 h-9"
+                                className="mt-1 h-11 min-w-0"
                                 type="number"
                                 min="0"
                                 step="0.01"
@@ -556,6 +536,7 @@ export function PurchaseReceivePage() {
                                   },
                                 )}
                               />
+                              <PurchaseFieldError message={colorError?.totalMeter?.message} />
                             </label>
                           </div>
                         </div>
@@ -565,7 +546,7 @@ export function PurchaseReceivePage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="mt-3 w-full border-dashed"
+                    className="mt-2 px-3 text-xs"
                     onClick={() => addColor(itemIndex)}
                   >
                     <Plus className="size-4" /> Add another color
@@ -578,34 +559,36 @@ export function PurchaseReceivePage() {
         <Button
           type="button"
           variant="outline"
-          className="w-full border-dashed"
+          className="mx-4 my-3 px-3 sm:mx-5"
           onClick={() => fields.append(newItem())}
         >
           <Plus className="size-4" /> Add another item
         </Button>
-        <section className="rounded-2xl bg-[var(--sidebar)] p-5">
-          <p className="text-sm font-semibold">Purchase summary</p>
-          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+        </section>
+        <section aria-label="Purchase summary and receiving action" className="sticky bottom-20 z-20 border border-[var(--border)] bg-[var(--surface)] p-3 lg:bottom-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 sm:flex-1">
+          <h2 className="text-xs font-semibold">Purchase summary</h2>
+          <div className="mt-2 grid grid-cols-3 gap-3 divide-x divide-[var(--border)] text-center tabular-nums sm:max-w-md">
             <div>
-              <strong className="block text-xl">{totals.colors}</strong>
+              <strong className="block break-words text-lg font-semibold">{totals.colors}</strong>
               <span className="text-xs text-[var(--muted)]">Colors</span>
             </div>
             <div>
-              <strong className="block text-xl">{totals.rolls}</strong>
+              <strong className="block break-words text-lg font-semibold">{totals.rolls}</strong>
               <span className="text-xs text-[var(--muted)]">Rolls</span>
             </div>
             <div>
-              <strong className="block text-xl">
+              <strong className="block break-words text-lg font-semibold">
                 {totals.meter.toLocaleString()}
               </strong>
               <span className="text-xs text-[var(--muted)]">Meter</span>
             </div>
           </div>
-        </section>
-        <div className="sticky bottom-20 z-20 rounded-xl border border-[var(--border)] bg-white/95 p-3 shadow-[var(--shadow-float)] backdrop-blur lg:bottom-4">
+          </div>
           <Button
-            variant="premium"
-            className="w-full"
+            type="submit"
+            className="w-full shrink-0 sm:w-auto"
             disabled={save.isPending}
           >
             {save.isPending ? (
@@ -615,8 +598,15 @@ export function PurchaseReceivePage() {
             )}{" "}
             Receive stock
           </Button>
-        </div>
+          </div>
+        </section>
       </form>
+      </div>
     </div>
   );
+}
+
+
+function PurchaseFieldError({ message }: { message?: string }) {
+  return message ? <span role="alert" className="mt-1 block text-xs text-[var(--danger)]">{message}</span> : null;
 }

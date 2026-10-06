@@ -10,11 +10,15 @@
 
 ## Product identity and stock history
 
-- Container number is unique and cannot be reused.
+- The supplier Commercial Invoice Contract No. is the Container Number (`containerNumber`). It is unique and cannot be reused; there is no separate contract number.
 - Item code identifies one reusable product master across containers.
 - Repeated item codes reuse the existing product; they do not create duplicate product masters.
 - Each container receipt remains a separate inventory batch.
-- Every item has at least one required color. One item can have multiple color variants. Size remains optional.
+- Every item has one optional **Description / Size** in `Product.description`, shared by all colors (for example `1.2mm*54"*36.5m`). Colors never have their own size. Item Code and Description / Size are sufficient; product name is optional.
+- Every item has at least one required color. `ProductVariant.color` contains the complete textual supplier **Color Code** (for example `02#Pine green`), never a CSS/hex color. Do not fabricate swatches.
+- Receive Purchase enters Item Code and Description / Size once, then one Color Code, Rolls, and optional Meter per color. Existing item codes reuse their master and description. A conflicting description is rejected; use an explicit Inventory edit first.
+- Legacy variant sizes and hex codes are retained only for migration review. Backfill an item description only when sizes agree; record conflicts instead of guessing. Ambiguous legacy variants cannot be reused by receiving a purchase until explicitly resolved.
+- New sales snapshot the item description and supplier color; historical invoice snapshots remain unchanged.
 
 ## Experience
 

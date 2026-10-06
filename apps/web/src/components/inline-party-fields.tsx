@@ -15,6 +15,8 @@ export type PartySuggestion = InlinePartyValues & {
 
 type Props = {
   kind: "Customer" | "Supplier";
+  dense?: boolean;
+  autoComplete?: "on" | "off";
   values: InlinePartyValues;
   selected?: PartySuggestion;
   suggestions: PartySuggestion[];
@@ -29,6 +31,8 @@ type Props = {
 
 export function InlinePartyFields({
   kind,
+  dense = false,
+  autoComplete,
   values,
   selected,
   suggestions,
@@ -45,11 +49,12 @@ export function InlinePartyFields({
     label: string,
     options?: { required?: boolean; type?: string; placeholder?: string },
   ) => (
-    <label className="min-w-0 text-sm font-medium">
+    <label className={dense ? `min-w-0 text-xs font-medium ${key === "name" || key === "address" ? "col-span-2 sm:col-span-1" : ""}` : "min-w-0 text-sm font-medium"}>
       {label} {options?.required ? "*" : null}
       <Input
-        className="mt-2 w-full"
+        className={dense ? "mt-1 h-11 w-full" : "mt-2 w-full"}
         type={options?.type}
+        autoComplete={autoComplete}
         placeholder={options?.placeholder}
         value={values[key]}
         onFocus={() => onSearch(values[key])}
@@ -69,7 +74,7 @@ export function InlinePartyFields({
   return (
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold">{kind} Information</h2>
+        <h2 className={dense ? "text-sm font-semibold" : "font-semibold"}>{kind} Information</h2>
         {selected ? (
           <button
             type="button"
@@ -81,7 +86,7 @@ export function InlinePartyFields({
         ) : null}
       </div>
       {selected ? (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-green-200 bg-[var(--success-soft)] px-3 py-2 text-sm text-green-800">
+        <div className={dense ? "mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-l-2 border-[var(--success)] py-1 pl-3 text-xs text-[var(--success)]" : "mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-green-200 bg-[var(--success-soft)] px-3 py-2 text-sm text-green-800"}>
           <span className="flex items-center gap-1.5 font-semibold">
             <CheckCircle2 className="size-4" /> Using existing{" "}
             {kind.toLowerCase()}
@@ -94,7 +99,7 @@ export function InlinePartyFields({
           ) : null}
         </div>
       ) : null}
-      <div className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2 mb-3">
+      <div className={dense ? "mt-3 grid min-w-0 grid-cols-2 gap-3" : "mt-4 grid min-w-0 gap-4 sm:grid-cols-2 mb-3"}>
         {field("name", `${kind} Name`, {
           required: true,
           placeholder: kind === "Customer" ? "Rahim Traders" : "Supplier name",
@@ -107,7 +112,7 @@ export function InlinePartyFields({
         {field("address", "Address", { placeholder: "Dhaka" })}
       </div>
       {!selected && (suggestions.length > 0 || searching) ? (
-        <div className="mt-3 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[var(--shadow-float)]">
+        <div className={dense ? "mt-3 w-full overflow-hidden border border-[var(--border)] bg-[var(--surface)]" : "mt-3 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[var(--shadow-float)]"}>
           <div className="border-b border-[var(--border)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
             {searching ? "Searching…" : `Existing ${kind.toLowerCase()}s`}
           </div>
@@ -116,7 +121,7 @@ export function InlinePartyFields({
               <button
                 type="button"
                 key={party.id}
-                className="flex min-h-16 w-full min-w-0 flex-col items-start rounded-xl px-3 py-2 text-left outline-none hover:bg-[var(--surface-warm)] focus-visible:bg-[var(--surface-warm)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className={`flex min-h-16 w-full min-w-0 flex-col items-start ${dense ? "rounded-sm" : "rounded-xl"} px-3 py-2 text-left outline-none hover:bg-[var(--surface-warm)] focus-visible:bg-[var(--surface-warm)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]`}
                 onClick={() => onSelect(party)}
               >
                 <span className="font-semibold">{party.name}</span>

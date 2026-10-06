@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -60,6 +61,7 @@ export class InventoryService {
               OR: [
                 { itemCode: { contains: term, mode: 'insensitive' } },
                 { name: { contains: term, mode: 'insensitive' } },
+                { description: { contains: term, mode: 'insensitive' } },
                 {
                   variants: {
                     some: {
@@ -89,13 +91,12 @@ export class InventoryService {
         id: true,
         itemCode: true,
         name: true,
+        description: true,
         variants: {
           where: { archivedAt: null },
           select: {
             id: true,
             color: true,
-            colorCode: true,
-            size: true,
             batches: {
               where: { container: { archivedAt: null } },
               select: {
@@ -118,8 +119,6 @@ export class InventoryService {
       const variants = product.variants.map((variant) => ({
         variantId: variant.id,
         color: variant.color,
-        colorCode: variant.colorCode,
-        size: variant.size,
         totalRolls: variant.batches.reduce((s, b) => s + b.availableRolls, 0),
         totalMeters: Number(
           variant.batches
@@ -139,6 +138,7 @@ export class InventoryService {
         productId: product.id,
         itemCode: product.itemCode,
         name: product.name,
+        description: product.description,
         totalRolls: variants.reduce((s, v) => s + v.totalRolls, 0),
         totalMeters: Number(
           variants.reduce((s, v) => s + v.totalMeters, 0).toFixed(2),
@@ -155,6 +155,7 @@ export class InventoryService {
   async updateProduct(id: string, input: UpdateProductRequest) {
     try {
       const itemCode = normalizeText(input.itemCode);
+      if (!itemCode) throw new BadRequestException('Item code is required.');
       const name = normalizeText(input.name) || null;
       return await this.prisma.product.update({
         where: { id, archivedAt: null },
@@ -162,9 +163,12 @@ export class InventoryService {
           itemCode,
           normalizedItemCode: normalizeCode(itemCode),
           name,
+          ...(input.description !== undefined
+            ? { description: normalizeText(input.description) || null }
+            : {}),
           searchText: [itemCode, name].filter(Boolean).join(' '),
         },
-        select: { id: true, itemCode: true, name: true },
+        select: { id: true, itemCode: true, name: true, description: true },
       });
     } catch (error) {
       this.handle(error, 'Item not found.');
@@ -198,25 +202,37 @@ export class InventoryService {
   }
   async updateVariant(id: string, input: UpdateVariantRequest) {
     const color = normalizeText(input.color);
-    const size = normalizeText(input.size) || null;
+    if (!color) throw new BadRequestException('Color Code is required.');
     const variant = await this.prisma.productVariant.findFirst({
       where: { id, archivedAt: null },
-      select: { product: { select: { normalizedItemCode: true } } },
+      select: {
+        productId: true,
+        product: { select: { normalizedItemCode: true } },
+      },
     });
     if (!variant) throw new NotFoundException('Color variant not found.');
+    const others = await this.prisma.productVariant.findMany({
+      where: { productId: variant.productId, id: { not: id } },
+    });
+    if (
+      others.some(
+        (other) => normalizeCode(other.color) === normalizeCode(color),
+      )
+    )
+      throw new ConflictException(
+        'This supplier Color Code already exists for this item.',
+      );
     try {
       return await this.prisma.productVariant.update({
         where: { id },
         data: {
           color,
-          colorCode: input.colorCode?.toUpperCase(),
-          size,
-          variantKey: `${normalizeCode(color)}|${normalizeCode(size ?? 'default')}`,
-          searchText: [variant.product.normalizedItemCode, color, size]
+          variantKey: normalizeCode(color),
+          searchText: [variant.product.normalizedItemCode, color]
             .filter(Boolean)
             .join(' '),
         },
-        select: { id: true, color: true, colorCode: true, size: true },
+        select: { id: true, color: true },
       });
     } catch (error) {
       this.handle(error, 'Color variant not found.');

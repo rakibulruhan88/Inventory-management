@@ -37,9 +37,27 @@ export class PurchasesService {
                 lines: {
                   some: {
                     variant: {
-                      product: {
-                        itemCode: { contains: term, mode: 'insensitive' },
-                      },
+                      OR: [
+                        { color: { contains: term, mode: 'insensitive' } },
+                        {
+                          product: {
+                            OR: [
+                              {
+                                itemCode: {
+                                  contains: term,
+                                  mode: 'insensitive',
+                                },
+                              },
+                              {
+                                description: {
+                                  contains: term,
+                                  mode: 'insensitive',
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
                     },
                   },
                 },
@@ -71,11 +89,12 @@ export class PurchasesService {
       throw new BadRequestException('Supplier name is required.');
     const normalizedContainerNumber = normalizeCode(input.containerNumber);
     const purchaseNumber = normalizeCode(input.purchaseNumber);
-    const totalRolls = input.items.reduce((sum, item) => sum + item.rolls, 0);
-    const totalMeter = input.items.reduce(
-      (sum, item) => sum + (item.totalMeter ?? 0),
-      0,
-    );
+    const totalRolls = input.items
+      .flatMap((item) => item.colors)
+      .reduce((sum, color) => sum + color.rolls, 0);
+    const totalMeter = input.items
+      .flatMap((item) => item.colors)
+      .reduce((sum, item) => sum + (item.totalMeter ?? 0), 0);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('afia-supplier-resolution'))`;
@@ -165,83 +184,114 @@ export class PurchasesService {
           },
         });
         const reusedItemCodes: string[] = [];
-        for (const [index, item] of input.items.entries()) {
-          const itemMeter = item.totalMeter ?? 0;
+        let index = 0;
+        const seenItems = new Set<string>();
+        for (const item of input.items) {
           const normalizedItemCode = normalizeCode(item.itemCode);
+          const description = normalizeText(item.description) || null;
+          if (!normalizedItemCode || seenItems.has(normalizedItemCode))
+            throw new BadRequestException(
+              'Enter each item code once, with all its colors.',
+            );
+          seenItems.add(normalizedItemCode);
+          // Serializes master reuse and description validation across receipts.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${normalizedItemCode}))`;
           const existing = await tx.product.findUnique({
             where: { normalizedItemCode },
-            select: { id: true },
           });
-          if (existing && !reusedItemCodes.includes(normalizedItemCode))
-            reusedItemCodes.push(normalizedItemCode);
+          if (
+            existing &&
+            description !== null &&
+            description !== existing.description
+          )
+            throw new ConflictException(
+              `Description / Size differs for ${existing.itemCode}. Update the item explicitly in Inventory before receiving.`,
+            );
+          if (existing) reusedItemCodes.push(normalizedItemCode);
           const product = await tx.product.upsert({
             where: { normalizedItemCode },
             create: {
               itemCode: normalizeText(item.itemCode),
               normalizedItemCode,
-              name: normalizeText(item.name) || null,
-              searchText: [normalizedItemCode, normalizeText(item.name)]
+              description,
+              searchText: [normalizedItemCode, description]
                 .filter(Boolean)
                 .join(' '),
             },
-            update: {
-              ...(item.name ? { name: normalizeText(item.name) } : {}),
-              archivedAt: null,
-            },
+            update: { archivedAt: null },
           });
-          const color = normalizeText(item.color);
-          const size = normalizeText(item.size) || null;
-          const variantKey = `${normalizeCode(color)}|${normalizeCode(size ?? 'default')}`;
-          const variant = await tx.productVariant.upsert({
-            where: {
-              productId_variantKey: { productId: product.id, variantKey },
-            },
-            create: {
-              productId: product.id,
-              color,
-              colorCode: item.colorCode.toUpperCase(),
-              size,
-              variantKey,
-              searchText: [normalizedItemCode, color, size]
-                .filter(Boolean)
-                .join(' '),
-            },
-            update: {
-              colorCode: item.colorCode.toUpperCase(),
-              archivedAt: null,
-            },
-          });
-          const batch = await tx.inventoryBatch.create({
-            data: {
-              batchCode: `${normalizedContainerNumber}-${String(index + 1).padStart(2, '0')}`,
-              containerId: container.id,
-              variantId: variant.id,
-              receivedAt: new Date(input.purchasedAt),
-              originalRolls: item.rolls,
-              originalMeter: itemMeter,
-              availableRolls: item.rolls,
-              availableMeter: itemMeter,
-            },
-          });
-          await tx.purchaseLine.create({
-            data: {
-              purchaseId: purchase.id,
-              variantId: variant.id,
-              batchId: batch.id,
-              rollCount: item.rolls,
-              totalMeter: itemMeter,
-            },
-          });
-          await tx.stockMovement.create({
-            data: {
-              type: 'PURCHASE',
-              variantId: variant.id,
-              batchId: batch.id,
-              reference: purchaseNumber,
-              rollsChange: item.rolls,
-              meterChange: itemMeter,
-            },
-          });
+          const seenColors = new Set<string>();
+          for (const colorInput of item.colors) {
+            index++;
+            const itemMeter = colorInput.totalMeter ?? 0;
+            const color = normalizeText(colorInput.color);
+            const variantKey = normalizeCode(color);
+            if (!variantKey || seenColors.has(variantKey))
+              throw new BadRequestException(
+                'Enter each supplier Color Code once per item.',
+              );
+            seenColors.add(variantKey);
+            const matches = await tx.productVariant
+              .findMany({
+                where: {
+                  productId: product.id,
+                },
+              })
+              .then((variants) =>
+                variants.filter(
+                  (variant) => normalizeCode(variant.color) === variantKey,
+                ),
+              );
+            if (matches.length > 1)
+              throw new ConflictException(
+                `Multiple legacy variants match ${product.itemCode} / ${color}. Resolve the migration conflict before receiving this color.`,
+              );
+            const variant =
+              matches.length === 1
+                ? await tx.productVariant.update({
+                    where: { id: matches[0].id },
+                    data: { archivedAt: null },
+                  })
+                : await tx.productVariant.create({
+                    data: {
+                      productId: product.id,
+                      color,
+                      variantKey,
+                      searchText: [normalizedItemCode, color].join(' '),
+                    },
+                  });
+            const batch = await tx.inventoryBatch.create({
+              data: {
+                batchCode: `${normalizedContainerNumber}-${String(index).padStart(2, '0')}`,
+                containerId: container.id,
+                variantId: variant.id,
+                receivedAt: new Date(input.purchasedAt),
+                originalRolls: colorInput.rolls,
+                originalMeter: itemMeter,
+                availableRolls: colorInput.rolls,
+                availableMeter: itemMeter,
+              },
+            });
+            await tx.purchaseLine.create({
+              data: {
+                purchaseId: purchase.id,
+                variantId: variant.id,
+                batchId: batch.id,
+                rollCount: colorInput.rolls,
+                totalMeter: itemMeter,
+              },
+            });
+            await tx.stockMovement.create({
+              data: {
+                type: 'PURCHASE',
+                variantId: variant.id,
+                batchId: batch.id,
+                reference: purchaseNumber,
+                rollsChange: colorInput.rolls,
+                meterChange: itemMeter,
+              },
+            });
+          }
         }
         await tx.auditLog.create({
           data: {

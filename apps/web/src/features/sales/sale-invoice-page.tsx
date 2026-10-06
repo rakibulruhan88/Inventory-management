@@ -106,17 +106,13 @@ function InvoiceSheet({ invoice }: { invoice: SaleInvoice }) {
           >
             <div>
               <strong>{line.itemCode}</strong>
-              {line.itemName && (
+              {(line.description || line.itemName) && (
                 <p className="mt-0.5 text-xs text-[var(--muted)]">
-                  {line.itemName}
+                  {line.description || line.itemName}
                 </p>
               )}
             </div>
             <div className="flex items-start gap-2">
-              <span
-                className="mt-0.5 size-3 shrink-0 rounded-full border border-black/10"
-                style={{ background: line.colorCode }}
-              />
               {line.color}
             </div>
             <span className="text-right font-medium">{line.rollsSold}</span>

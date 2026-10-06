@@ -59,9 +59,7 @@ describe('final roll-only inventory and sale rules', () => {
       items: [
         {
           itemCode: `${tag}-ITEM`,
-          color: 'Black',
-          colorCode: '#000000',
-          rolls: 5,
+          colors: [{ color: 'Black', rolls: 5 }],
         },
       ],
     });
@@ -74,10 +72,7 @@ describe('final roll-only inventory and sale rules', () => {
       items: [
         {
           itemCode: `${tag}-ITEM`,
-          color: 'Black',
-          colorCode: '#000000',
-          rolls: 4,
-          totalMeter: 1200,
+          colors: [{ color: 'Black', rolls: 4, totalMeter: 1200 }],
         },
       ],
     });
@@ -256,10 +251,7 @@ describe('final roll-only inventory and sale rules', () => {
         items: [
           {
             itemCode: `${tag}-BATCH`,
-            color: 'Tan',
-            colorCode: '#D2B48C',
-            rolls: 2,
-            totalMeter: 200,
+            colors: [{ color: 'Tan', rolls: 2, totalMeter: 200 }],
           },
         ],
       });
@@ -328,16 +320,11 @@ describe('final roll-only inventory and sale rules', () => {
       items: [
         {
           itemCode: `${tag}-BLACK`,
-          color: 'Black',
-          colorCode: '#000000',
-          rolls: 5,
+          colors: [{ color: 'Black', rolls: 5 }],
         },
         {
           itemCode: `${tag}-BROWN`,
-          color: 'Brown',
-          colorCode: '#8B5A2B',
-          rolls: 4,
-          totalMeter: 1200,
+          colors: [{ color: 'Brown', rolls: 4, totalMeter: 1200 }],
         },
       ],
     });
@@ -425,11 +412,14 @@ describe('final roll-only inventory and sale rules', () => {
       items: [
         {
           itemCode: `${tag}-HARDEN`,
-          name: 'Snapshot Leather',
-          color: 'Green',
-          colorCode: '#008000',
-          rolls: 3,
-          totalMeter: 300,
+          description: 'Snapshot Leather',
+          colors: [
+            {
+              color: 'Green',
+              rolls: 3,
+              totalMeter: 300,
+            },
+          ],
         },
       ],
     });
@@ -485,10 +475,14 @@ describe('final roll-only inventory and sale rules', () => {
       where: { id: 'default' },
       data: { storeName: 'Changed Store' },
     });
+    await prisma.product.update({
+      where: { id: variant.productId },
+      data: { description: 'Changed description' },
+    });
     const invoice = await sales.details(created.id);
     expect(invoice.customer.name).toBe(`${tag} Hard Customer`);
     expect(invoice.lines[0]).toMatchObject({
-      itemName: 'Snapshot Leather',
+      description: 'Snapshot Leather',
       color: 'Green',
     });
     expect(invoice.settings.storeName).toBe('Snapshot Store');

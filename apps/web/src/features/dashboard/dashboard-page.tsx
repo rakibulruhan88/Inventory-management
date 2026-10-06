@@ -106,7 +106,7 @@ function LowStockTable() {
               <tbody>
                 {lowStock.slice(0, 6).map((variant) => (
                   <tr key={variant.variantId} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--page)]">
-                    <td className="px-4 py-3 sm:px-5"><Link className="font-semibold text-[var(--primary)] hover:underline" to={`/inventory?search=${encodeURIComponent(variant.itemCode)}`}>{variant.itemCode}</Link><p className="mt-1 break-words text-xs text-[var(--muted)]">{variant.color}{variant.size ? ` · ${variant.size}` : ""}</p></td>
+                    <td className="px-4 py-3 sm:px-5"><Link className="font-semibold text-[var(--primary)] hover:underline" to={`/inventory?search=${encodeURIComponent(variant.itemCode)}`}>{variant.itemCode}</Link><p className="mt-1 break-words text-xs text-[var(--muted)]">{variant.color}</p></td>
                     <td className="px-3 py-3 text-right font-medium tabular-nums">{number(variant.totalRolls)}</td>
                     <td className="px-4 py-3 text-right tabular-nums sm:px-5">{number(variant.totalMeters)}</td>
                   </tr>

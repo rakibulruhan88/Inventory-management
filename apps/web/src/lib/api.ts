@@ -1,4 +1,9 @@
 import type {
+  InvoiceImportReviewInput,
+  InvoiceImportIssue,
+  InvoiceImportDraftResponse,
+  InvoiceImportUploadResponse,
+  InvoiceImportLimits,
   CreateSupplierRequest,
   CustomerInput,
   CustomerSummary,
@@ -46,6 +51,11 @@ export async function getApiHealth(): Promise<HealthResponse> {
   return response.json() as Promise<HealthResponse>;
 }
 
+export class ApiFieldError extends Error {
+  fieldErrors: InvoiceImportIssue[];
+  constructor(message: string, fieldErrors: InvoiceImportIssue[]) { super(message); this.fieldErrors = fieldErrors; }
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.method && init.method !== "GET" && !navigator.onLine) {
     throw new Error(
@@ -56,7 +66,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...init?.headers,
     },
   });
@@ -66,10 +76,12 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       window.dispatchEvent(new Event("afia:unauthorized"));
     const body = (await response.json().catch(() => null)) as {
       message?: string | string[];
+      fieldErrors?: InvoiceImportIssue[];
     } | null;
     const message = Array.isArray(body?.message)
       ? body.message[0]
       : body?.message;
+    if (body?.fieldErrors) throw new ApiFieldError(message ?? "Check the review fields.", body.fieldErrors);
     throw new Error(message ?? "Something went wrong. Please try again.");
   }
 
@@ -162,6 +174,7 @@ export async function downloadSaleInvoicePdf(id: string) {
       window.dispatchEvent(new Event("afia:unauthorized"));
     const body = (await response.json().catch(() => null)) as {
       message?: string | string[];
+      fieldErrors?: InvoiceImportIssue[];
     } | null;
     throw new Error(
       Array.isArray(body?.message)
@@ -300,5 +313,36 @@ export function receivePurchase(input: ReceivePurchaseRequest) {
   return apiRequest<ReceivePurchaseResponse>("/purchases/receive", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+
+export function getInvoiceImportLimits() {
+  return apiRequest<InvoiceImportLimits>("/invoice-imports/limits");
+}
+export function uploadInvoiceImport(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  return apiRequest<InvoiceImportUploadResponse>("/invoice-imports", {
+    method: "POST", body, headers: { "X-Afia-Invoice-Import": "1" },
+  });
+}
+export function parseInvoiceImport(id: string) {
+  return apiRequest<InvoiceImportDraftResponse>(`/invoice-imports/${encodeURIComponent(id)}/parse`, {
+    method: "POST", headers: { "X-Afia-Invoice-Import": "1" },
+  });
+}
+export function getInvoiceImport(id: string) {
+  return apiRequest<InvoiceImportDraftResponse>(`/invoice-imports/${encodeURIComponent(id)}`);
+}
+
+export function saveInvoiceReview(id: string, input: InvoiceImportReviewInput) {
+  return apiRequest<InvoiceImportDraftResponse>(`/invoice-imports/${encodeURIComponent(id)}/review`, {
+    method: "PUT", headers: { "X-Afia-Invoice-Import": "1" }, body: JSON.stringify(input),
+  });
+}
+export function resetInvoiceReview(id: string) {
+  return apiRequest<InvoiceImportDraftResponse>(`/invoice-imports/${encodeURIComponent(id)}/review/reset`, {
+    method: "POST", headers: { "X-Afia-Invoice-Import": "1" }, body: JSON.stringify({}),
   });
 }

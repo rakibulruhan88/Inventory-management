@@ -16,8 +16,6 @@ export type InventoryBatchSummary = {
 export type InventoryColorVariant = {
   variantId: string;
   color: string;
-  colorCode: string;
-  size: string | null;
   totalRolls: number;
   totalMeters: number;
   openRolls: number;
@@ -28,17 +26,20 @@ export type InventoryItemSummary = {
   productId: string;
   itemCode: string;
   name: string | null;
+  description: string | null;
   totalRolls: number;
   totalMeters: number;
   colorCount: number;
   containerCount: number;
   variants: InventoryColorVariant[];
 };
-export type UpdateProductRequest = { itemCode: string; name?: string };
+export type UpdateProductRequest = {
+  itemCode: string;
+  name?: string;
+  description?: string;
+};
 export type UpdateVariantRequest = {
   color: string;
-  colorCode?: string;
-  size?: string;
 };
 export type HealthResponse = {
   status: "ok";
@@ -147,9 +148,8 @@ export type ProductSearchResult = {
   variantId: string;
   itemCode: string;
   name: string | null;
+  description: string | null;
   color: string | null;
-  colorCode: string;
-  size: string | null;
   availableRolls: number;
   availableMeter: number;
 };
@@ -168,14 +168,15 @@ export type InlinePartyInput = {
   address?: string;
 };
 export type CreateSupplierRequest = SupplierInput;
-export type ReceivePurchaseItem = {
-  itemCode: string;
-  name?: string;
+export type ReceivePurchaseColor = {
   color: string;
-  colorCode: string;
-  size?: string;
   rolls: number;
   totalMeter?: number;
+};
+export type ReceivePurchaseItem = {
+  itemCode: string;
+  description?: string;
+  colors: ReceivePurchaseColor[];
 };
 export type ReceivePurchaseRequest = {
   purchaseNumber: string;
@@ -228,8 +229,8 @@ export type SaleInvoiceLine = {
   id: string;
   itemCode: string;
   itemName: string | null;
+  description: string | null;
   color: string;
-  colorCode: string;
   rollsSold: number;
   meterSold: number | null;
   lineTotal: number;
@@ -313,3 +314,98 @@ export type StoreSettingsContract = {
   lowStockMeterThreshold: number;
   brandAccent: string;
 };
+
+
+// Commercial invoice import is a temporary review pipeline; it cannot receive stock.
+export type InvoiceImportStatus = "UPLOADED" | "PARSING" | "REVIEW" | "FAILED" | "CONFIRMED" | "EXPIRED";
+export type InvoiceParsingMethod = "PDF_TEXT" | "OCR" | "HYBRID";
+export type InvoiceImportIssue = {
+  code: string;
+  message: string;
+  field?: string;
+  page?: number;
+  line?: number;
+};
+export type InvoiceImportColor = {
+  color: string;
+  rolls: number | null;
+  meter: number | null;
+  matchedVariantId: string | null;
+  matchStatus: "NEW" | "MATCHED" | "AMBIGUOUS";
+  source: { page: number; line: number; method: "PDF_TEXT" | "OCR" } | null;
+};
+export type InvoiceImportItem = {
+  itemCode: string;
+  description: string | null;
+  matchedProductId: string | null;
+  existingDescription: string | null;
+  matchStatus: "NEW" | "MATCHED" | "DESCRIPTION_CONFLICT";
+  descriptionMissingInExisting: boolean;
+  colors: InvoiceImportColor[];
+};
+export type InvoiceImportUnassignedRow = {
+  itemCode: string | null;
+  description: string | null;
+  color: string | null;
+  rolls: number | null;
+  meter: number | null;
+  text: string;
+  reason: string;
+  source: NonNullable<InvoiceImportColor["source"]>;
+};
+export type InvoiceImportReview = {
+  parserVersion: number;
+  draftId: string;
+  parsingMethod: InvoiceParsingMethod;
+  supplier: {
+    detectedName: string | null;
+    phone: string | null;
+    address: string | null;
+    contactPerson: string | null;
+    fax: string | null;
+    matchedSupplierId: string | null;
+    matchStatus: "NEW" | "MATCHED" | "AMBIGUOUS" | "NOT_DETECTED";
+  };
+  containerNumber: string | null;
+  items: InvoiceImportItem[];
+  unassignedRows: InvoiceImportUnassignedRow[];
+  invoiceTotals: { rolls: number | null; meter: number | null };
+  parsedTotals: { rolls: number; meter: number };
+  totalsMatch: { rolls: boolean | null; meter: boolean | null };
+  validationPassed: boolean;
+  warnings: InvoiceImportIssue[];
+};
+// Only editable business fields; totals and matching metadata are server-owned.
+export type InvoiceImportReviewInput = {
+  supplier: { name: string; phone: string | null; fax: string | null; address: string | null; contactPerson: string | null };
+  containerNumber: string;
+  items: {
+    itemCode: string;
+    description: string | null;
+    colors: { color: string; rolls: number | null; meter: number | null; sourceRow?: { item: number; color: number } }[];
+  }[];
+};
+export type InvoiceImportDraftResponse = {
+  originalExtractedData: InvoiceImportReview | null;
+  hasReviewedChanges: boolean;
+  validationPassed: boolean;
+  readyForConfirmation: boolean;
+  blockingIssues: InvoiceImportIssue[];
+  id: string;
+  originalFileName: string;
+  mimeType: string;
+  fileSize: number;
+  status: InvoiceImportStatus;
+  parsingMethod: InvoiceParsingMethod | null;
+  review: InvoiceImportReview | null;
+  requiresReparse: boolean;
+  warnings: InvoiceImportIssue[];
+  errors: InvoiceImportIssue[];
+  createdAt: string;
+  expiresAt: string;
+};
+export type InvoiceImportUploadResponse = InvoiceImportDraftResponse & {
+  duplicateFile: boolean;
+  previousDraftId: string | null;
+};
+export type InvoiceImportLimits = { maxFileBytes: number; supportedMimeTypes: string[] };

@@ -11,3 +11,6 @@ coverage/
 .vscode/
 apps/api/src/generated/prisma/
 *.tsbuildinfo
+
+# Private invoice import files (default storage roots, never public assets).
+.invoice-import-storage/

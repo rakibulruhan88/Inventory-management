@@ -176,8 +176,8 @@ export function NewSalePage() {
           {
             value: product.productId,
             label: product.itemCode,
-            description: product.name || "Saved item",
-            keywords: [product.name || "", product.color || ""],
+            description: product.description || "Saved item",
+            keywords: [product.description || "", product.color || ""],
           },
         ]),
     ).values(),
@@ -366,9 +366,9 @@ export function NewSalePage() {
             )
             .map((product) => ({
               value: product.variantId,
-              label: `${product.color || "Unnamed color"}${product.size ? ` · ${product.size}` : ""}`,
+              label: product.color || "Unnamed color",
               description: `${product.availableRolls} Rolls · ${product.availableMeter.toLocaleString()} Meter available`,
-              keywords: [product.color || "", product.size || ""],
+              keywords: [product.color || "", product.description || ""],
             }));
           const error = form.formState.errors.items?.[itemIndex];
           return (
@@ -382,13 +382,12 @@ export function NewSalePage() {
                     Item {itemIndex + 1}
                   </p>
                   <h2 className="mt-1 font-semibold">
-                    {selectedProduct?.name ||
-                      selectedProduct?.itemCode ||
+                    {selectedProduct?.itemCode ||
                       "Choose an item"}
                   </h2>
-                  {selectedProduct?.name && (
+                  {selectedProduct?.description && (
                     <p className="text-xs text-[var(--muted)]">
-                      {selectedProduct.itemCode}
+                      {selectedProduct.description}
                     </p>
                   )}
                 </div>
@@ -406,7 +405,7 @@ export function NewSalePage() {
               <div className="mt-4">
                 <SearchablePicker
                   label="Search item"
-                  placeholder="Search item code or name..."
+                  placeholder="Search item code or description..."
                   searchPlaceholder="Search stock..."
                   options={availableProductOptions}
                   value={item?.productId}
@@ -484,16 +483,9 @@ export function NewSalePage() {
                         </div>
                         {selectedColor && (
                           <div className="mt-2 flex items-center gap-3 rounded-lg bg-[var(--surface-warm)] px-3 py-2">
-                            <span
-                              className="size-8 rounded-lg border border-black/10"
-                              style={{ background: selectedColor.colorCode }}
-                            />
                             <div className="text-xs text-[var(--muted)]">
                               <p className="font-medium text-[var(--foreground)]">
                                 {selectedColor.color}
-                                {selectedColor.size
-                                  ? ` · ${selectedColor.size}`
-                                  : ""}
                               </p>
                               <p>
                                 Available:{" "}

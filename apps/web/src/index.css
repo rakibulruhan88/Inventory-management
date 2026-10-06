@@ -92,6 +92,19 @@ h3,
   outline-offset: 3px;
 }
 
+/* Shared by Receive Purchase controls and its portaled picker only. */
+.purchase-form-controls :is(input, textarea, select):focus,
+.purchase-form-controls button:focus-visible {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.purchase-form-controls button:not(.border):focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 2px;
+}
+
 button,
 input {
   font: inherit;

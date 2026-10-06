@@ -16,10 +16,28 @@ export class ProductsService {
             OR: [
               { itemCode: { contains: term, mode: 'insensitive' } },
               { name: { contains: term, mode: 'insensitive' } },
+              { description: { contains: term, mode: 'insensitive' } },
               { searchText: { contains: term, mode: 'insensitive' } },
               {
                 variants: {
-                  some: { searchText: { contains: term, mode: 'insensitive' } },
+                  some: {
+                    OR: [
+                      { color: { contains: term, mode: 'insensitive' } },
+                      { searchText: { contains: term, mode: 'insensitive' } },
+                      {
+                        batches: {
+                          some: {
+                            container: {
+                              containerNumber: {
+                                contains: term,
+                                mode: 'insensitive',
+                              },
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
                 },
               },
             ],
@@ -29,13 +47,12 @@ export class ProductsService {
         id: true,
         itemCode: true,
         name: true,
+        description: true,
         variants: {
           where: { archivedAt: null },
           select: {
             id: true,
             color: true,
-            colorCode: true,
-            size: true,
             batches: {
               where: { container: { archivedAt: null } },
               select: { availableRolls: true, availableMeter: true },
@@ -54,9 +71,8 @@ export class ProductsService {
         variantId: variant.id,
         itemCode: product.itemCode,
         name: product.name,
+        description: product.description,
         color: variant.color,
-        colorCode: variant.colorCode,
-        size: variant.size,
         availableRolls: variant.batches.reduce(
           (sum, batch) => sum + batch.availableRolls,
           0,

@@ -12,14 +12,12 @@ export class UpdateProductDto implements UpdateProductRequest {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional() @IsString() description?: string;
 }
 
 export class UpdateVariantDto implements UpdateVariantRequest {
   @IsString()
   @MinLength(1)
   color: string;
-
-  @IsOptional()
-  @IsString()
-  size?: string;
 }

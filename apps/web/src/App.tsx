@@ -105,50 +105,49 @@ function PurchasesPage() {
     onError: (error: Error) => toast.error(error.message),
   });
   return (
-    <div className="mx-auto max-w-350 px-4 pb-28 pt-7 md:px-7 lg:px-10">
+    <div className="mx-auto max-w-350 px-4 pb-28 pt-6 md:px-7 lg:px-8 lg:pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-3xl font-semibold">Purchases</h1>
-        <Button asChild>
-          <NavLink to="/purchases/new">New Purchase</NavLink>
-        </Button>
+        <div><h1 className="text-2xl font-semibold tracking-tight">Purchases</h1><p className="mt-1 text-sm text-[var(--muted)]">Stock receipts, suppliers, and container records.</p></div>
+        <Button asChild><NavLink to="/purchases/new">New Purchase</NavLink></Button>
       </div>
-      <div className="mt-6 space-y-3">
-        {q.data?.map((x) => (
-          <article
-            key={x.id}
-            className="grid gap-3 rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] transition hover:border-[var(--primary-border)] sm:grid-cols-[1fr_1.5fr_auto_auto] sm:items-center"
-          >
-            <strong>{x.purchaseNumber}</strong>
-            <span className="text-[var(--muted)]">
-              {x.supplierName} · {x.containerNumber}
-            </span>
-            <span>
-              {x.totalRolls} Rolls · {x.totalMeters.toLocaleString()} Meter
-            </span>
-            {x.status === "RECEIVED" ? (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setCorrecting({ id: x.id, number: x.purchaseNumber })
-                }
-              >
-                Correct / Reverse
-              </Button>
-            ) : (
-              <span className="rounded-full bg-[var(--danger-soft)] px-2.5 py-1 text-xs font-medium text-[var(--danger)]">
-                Reversed
-              </span>
-            )}
-          </article>
-        ))}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--muted)]">
+        <p>{q.isLoading ? "Loading receipts…" : q.isError ? "Receipts unavailable" : `${q.data?.length ?? 0} ${q.data?.length === 1 ? "receipt" : "receipts"}`}</p>
+        {search && <div className="flex min-w-0 flex-wrap items-center gap-3"><span className="break-words">Matching “{search}”</span><NavLink className="inline-flex min-h-11 items-center font-semibold text-[var(--primary)] hover:underline" to="/purchases">Clear search</NavLink></div>}
       </div>
+      <section aria-label="Purchase receipts" aria-busy={q.isLoading} className="mt-3 border border-[var(--border)] bg-[var(--surface)]">
+        <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_5rem_7rem_9rem] items-center gap-3 border-b border-[var(--border)] bg-[var(--page)] px-4 py-3 text-xs font-medium text-[var(--muted)] md:grid">
+          <span>Reference / Invoice</span><span>Supplier / Container</span><span className="text-right">Rolls</span><span className="text-right">Meter</span><span className="text-right">Receipt status</span>
+        </div>
+        {q.isError ? (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-4 px-4 py-8"><div><h2 className="text-sm font-semibold">Purchase receipts could not be loaded</h2><p className="mt-1 text-sm text-[var(--muted)]">Check your connection and try again.</p></div><Button variant="outline" disabled={q.isFetching} onClick={() => void q.refetch()}>{q.isFetching ? "Retrying…" : "Try again"}</Button></div>
+        ) : q.isLoading ? (
+          <div role="status"><span className="sr-only">Loading purchase receipts…</span>{[0, 1, 2, 3].map((row) => <div key={row} aria-hidden="true" className="flex min-h-20 items-center justify-between gap-4 border-b border-[var(--border)] px-4 last:border-0"><div className="h-3 w-1/3 rounded-sm bg-[var(--surface-muted)]" /><div className="h-4 w-20 rounded-sm bg-[var(--surface-muted)]" /></div>)}</div>
+        ) : q.data?.length ? (
+          <ul>
+            {q.data.map((x) => (
+              <li key={x.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-3 last:border-0 hover:bg-[var(--page)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_5rem_7rem_9rem]">
+                <div className="min-w-0"><p className="break-words text-sm font-semibold">{x.purchaseNumber}</p><p className="mt-1 break-words text-xs text-[var(--muted)] md:hidden">{x.supplierName} · {x.containerNumber}</p></div>
+                <div className="hidden min-w-0 md:block"><p className="break-words text-sm">{x.supplierName}</p><p className="mt-1 break-words text-xs text-[var(--muted)]">{x.containerNumber}</p></div>
+                <div className="max-w-32 break-words text-right tabular-nums md:hidden"><p className="text-sm font-semibold">{x.totalRolls} <span className="text-xs font-normal text-[var(--muted)]">Rolls</span></p><p className="mt-1 text-xs text-[var(--muted)]">{x.totalMeters.toLocaleString()} Meter</p></div>
+                <p className="hidden break-words text-right text-sm font-medium tabular-nums md:block">{x.totalRolls}<span className="sr-only"> Rolls</span></p>
+                <p className="hidden break-words text-right text-sm tabular-nums md:block">{x.totalMeters.toLocaleString()}<span className="sr-only"> Meter</span></p>
+                <div className="col-span-2 flex items-center justify-between border-t border-[var(--border)] pt-1 md:col-span-1 md:justify-end md:border-t-0 md:pt-0">
+                  {x.status === "RECEIVED" ? <><span className="text-xs text-[var(--muted)] md:hidden">Received</span><Button variant="ghost" className="px-2 text-xs" onClick={() => setCorrecting({ id: x.id, number: x.purchaseNumber })}>Correct / Reverse</Button></> : <span className="py-2 text-xs font-medium text-[var(--danger)]">Reversed</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="px-4 py-8"><h2 className="text-sm font-semibold">{search ? "No matching purchases" : "No purchases recorded yet"}</h2><p className="mt-1 text-sm text-[var(--muted)]">{search ? "Clear the search to see all purchase receipts." : "Receive a purchase to record a supplier, container, and incoming stock."}</p><Button asChild variant="outline" className="mt-4"><NavLink to={search ? "/purchases" : "/purchases/new"}>{search ? "Clear search" : "New Purchase"}</NavLink></Button></div>
+        )}
+      </section>
       <Drawer.Root
         open={!!correcting}
         onOpenChange={(open) => !open && setCorrecting(null)}
       >
         <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
-          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t border-[var(--border)] bg-white p-5 shadow-[var(--shadow-float)]">
+          <Drawer.Overlay className="fixed inset-0 z-50 bg-black/35" />
+          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[90svh] overflow-y-auto rounded-t-lg border-t border-[var(--border)] bg-[var(--surface)] p-5 pb-[max(20px,env(safe-area-inset-bottom))]">
             <div className="mx-auto max-w-lg">
               <Drawer.Title className="text-lg font-semibold">
                 Reverse {correcting?.number}?
@@ -171,7 +170,7 @@ function PurchasesPage() {
                 disabled={reason.trim().length < 2 || reverse.isPending}
                 onClick={() => reverse.mutate()}
               >
-                Reverse Purchase
+                {reverse.isPending ? "Reversing…" : "Reverse Purchase"}
               </Button>
             </div>
           </Drawer.Content>

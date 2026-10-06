@@ -74,7 +74,7 @@ export function InventoryPage() {
   const [itemCode, setItemCode] = useState("");
   const [name, setName] = useState("");
   const [color, setColor] = useState("");
-  const [size, setSize] = useState("");
+  const [description, setDescription] = useState("");
   const [adjustTarget, setAdjustTarget] =
     useState<InventoryColorVariant | null>(null);
   const [rollsChange, setRollsChange] = useState(0);
@@ -100,10 +100,10 @@ export function InventoryPage() {
         return updateInventoryItem(editTarget.item.productId, {
           itemCode,
           name,
+          description,
         });
       return updateInventoryVariant(editTarget.variant.variantId, {
         color,
-        size,
       });
     },
     onSuccess: async () => {
@@ -149,11 +149,11 @@ export function InventoryPage() {
   const beginEditItem = (item: InventoryItemSummary) => {
     setItemCode(item.itemCode);
     setName(item.name ?? "");
+    setDescription(item.description ?? "");
     setEditTarget({ kind: "item", item });
   };
   const beginEditVariant = (variant: InventoryColorVariant) => {
     setColor(variant.color);
-    setSize(variant.size ?? "");
     setEditTarget({ kind: "variant", variant });
   };
   const toggle = (id: string) =>
@@ -245,8 +245,8 @@ export function InventoryPage() {
                   >
                     <span className="min-w-0">
                       <span className="block break-words text-sm font-semibold">{item.itemCode}</span>
-                      <span className="mt-1 block truncate text-xs text-[var(--muted)]" title={item.name || "Unnamed leather item"}>
-                        {item.name || "Unnamed leather item"}
+                      <span className="mt-1 block truncate text-xs text-[var(--muted)]" title={item.description || item.name || "No Description / Size"}>
+                        {item.description || item.name || "No Description / Size"}
                       </span>
                       <span className="mt-1 block truncate text-xs text-[var(--muted)] md:hidden" title={item.variants.map((variant) => variant.color).join(", ")}>
                         {item.colorCount} {item.colorCount === 1 ? "color" : "colors"} · {item.variants.map((variant) => variant.color).join(", ")}
@@ -278,7 +278,7 @@ export function InventoryPage() {
                         <div className="border-t border-[var(--border)]">
                           <div className="flex flex-col items-stretch justify-between gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--page)] px-4 py-2 md:flex-row md:flex-wrap md:items-center md:gap-y-1">
                             <div className="min-w-0 md:flex-1">
-                              <p className="break-words text-sm font-medium">{item.name || "Unnamed leather item"}</p>
+                              <p className="break-words text-sm font-medium">{item.description || item.name || "No Description / Size"}</p>
                               <p className="mt-1 text-xs text-[var(--muted)]">
                                 {item.colorCount} {item.colorCount === 1 ? "color" : "colors"} · From {item.containerCount} {item.containerCount === 1 ? "container" : "containers"}
                               </p>
@@ -361,33 +361,22 @@ export function InventoryPage() {
                     />
                   </label>
                   <label className="text-sm font-medium">
-                    Item name
+                    Description / Size
                     <Input
                       className="mt-2"
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
                     />
                   </label>
                 </div>
               ) : (
                 <div className="mt-5 grid gap-4">
                   <label className="text-sm font-medium">
-                    Color <span className="text-[var(--danger)]">*</span>
+                    Color Code <span className="text-[var(--danger)]">*</span>
                     <Input
                       className="mt-2"
                       value={color}
                       onChange={(event) => setColor(event.target.value)}
-                    />
-                  </label>
-                  <label className="text-sm font-medium">
-                    Size{" "}
-                    <span className="font-normal text-[var(--muted)]">
-                      (optional)
-                    </span>
-                    <Input
-                      className="mt-2"
-                      value={size}
-                      onChange={(event) => setSize(event.target.value)}
                     />
                   </label>
                 </div>
@@ -543,9 +532,8 @@ function InventoryColorDetails({
     <section aria-label={`${variant.color} stock`} className="border-b border-[var(--border)] px-4 py-3 last:border-b-0 md:pl-8">
       <div className="flex flex-col items-stretch justify-between gap-x-4 gap-y-1 md:flex-row md:flex-wrap md:items-center md:gap-y-2">
         <div className="flex min-w-0 items-start gap-2.5 md:flex-1 md:basis-44">
-          <span aria-hidden="true" className="mt-1 size-3 shrink-0 border border-black/15" style={{ background: variant.colorCode }} />
           <div className="min-w-0">
-            <h3 className="break-words text-sm font-semibold">{variant.color}{variant.size ? ` · ${variant.size}` : ""}</h3>
+            <h3 className="break-words text-sm font-semibold">{variant.color}</h3>
             <p className="mt-1 text-xs tabular-nums text-[var(--muted)]">{variant.totalRolls} Rolls · {variant.totalMeters} Meter</p>
             {lowStock && <p className="mt-1 text-xs font-medium text-[var(--warning)]">Low stock</p>}
           </div>

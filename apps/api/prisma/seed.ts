@@ -17,10 +17,10 @@ async function main() {
     prisma.product.create({ data: { itemCode: 'AL-205', normalizedItemCode: 'AL-205', name: 'Soft Goat Leather', searchText: 'AL-205 Soft Goat Leather' } }),
     prisma.product.create({ data: { itemCode: 'AL-310', normalizedItemCode: 'AL-310', name: 'Classic Buffalo Leather', searchText: 'AL-310 Classic Buffalo Leather' } }),
   ]);
-  const black = await prisma.productVariant.create({ data: { productId: products[0].id, color: 'Black', colorCode: '#000000', variantKey: 'BLACK|DEFAULT', searchText: 'AL-101 Black' } });
-  const brown = await prisma.productVariant.create({ data: { productId: products[0].id, color: 'Brown', colorCode: '#8B5A2B', variantKey: 'BROWN|DEFAULT', searchText: 'AL-101 Brown' } });
-  const tan = await prisma.productVariant.create({ data: { productId: products[1].id, color: 'Tan', colorCode: '#D2B48C', variantKey: 'TAN|DEFAULT', searchText: 'AL-205 Tan' } });
-  const navy = await prisma.productVariant.create({ data: { productId: products[2].id, color: 'Navy', colorCode: '#000080', variantKey: 'NAVY|DEFAULT', searchText: 'AL-310 Navy' } });
+  const black = await prisma.productVariant.create({ data: { productId: products[0].id, color: 'Black', variantKey: 'BLACK', searchText: 'AL-101 Black' } });
+  const brown = await prisma.productVariant.create({ data: { productId: products[0].id, color: 'Brown', variantKey: 'BROWN', searchText: 'AL-101 Brown' } });
+  const tan = await prisma.productVariant.create({ data: { productId: products[1].id, color: 'Tan', variantKey: 'TAN', searchText: 'AL-205 Tan' } });
+  const navy = await prisma.productVariant.create({ data: { productId: products[2].id, color: 'Navy', variantKey: 'NAVY', searchText: 'AL-310 Navy' } });
   async function receipt(containerNumber: string, purchaseNumber: string, supplierId: string, receivedAt: Date, entries: Array<{ variantId: string; rolls: number; meter: number }>) {
     const container = await prisma.container.create({ data: { containerNumber, normalizedContainerNumber: containerNumber, supplierId, status: 'RECEIVED', receivedAt, notes: 'Opening inventory', searchText: containerNumber } });
     const purchase = await prisma.purchase.create({ data: { purchaseNumber, supplierId, containerId: container.id, status: 'RECEIVED', purchasedAt: receivedAt, notes: 'Opening inventory' } });

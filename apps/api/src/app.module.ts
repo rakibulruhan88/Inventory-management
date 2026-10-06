@@ -13,6 +13,7 @@ import { ContainersModule } from './containers/containers.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { SearchModule } from './search/search.module.js';
 import { SettingsModule } from './settings/settings.module.js';
+import { InvoiceImportsModule } from './invoice-imports/invoice-imports.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthGuard } from './auth/auth.guard.js';
 
@@ -33,6 +34,7 @@ import { AuthGuard } from './auth/auth.guard.js';
     SearchModule,
     SettingsModule,
     AuthModule,
+    InvoiceImportsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: AuthGuard }],

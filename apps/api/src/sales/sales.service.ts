@@ -51,11 +51,18 @@ export class SalesService {
               {
                 lines: {
                   some: {
-                    variant: {
-                      product: {
-                        itemCode: { contains: term, mode: 'insensitive' },
-                      },
-                    },
+                    OR: [
+                      { itemCodeSnapshot: { contains: term, mode: 'insensitive' } },
+                      { colorNameSnapshot: { contains: term, mode: 'insensitive' } },
+                      { descriptionSnapshot: { contains: term, mode: 'insensitive' } },
+                      { variant: { OR: [
+                        { color: { contains: term, mode: 'insensitive' } },
+                        { product: { OR: [
+                          { itemCode: { contains: term, mode: 'insensitive' } },
+                          { description: { contains: term, mode: 'insensitive' } },
+                        ] } },
+                      ] } },
+                    ],
                   },
                 },
               },
@@ -139,7 +146,7 @@ export class SalesService {
         itemCode: line.itemCodeSnapshot || line.variant.product.itemCode,
         itemName: line.itemNameSnapshot ?? line.variant.product.name,
         color: line.colorNameSnapshot || line.variant.color,
-        colorCode: line.colorCodeSnapshot || line.variant.colorCode,
+        description: line.descriptionSnapshot ?? null,
         rollsSold: line.rollsSold,
         meterSold: Number(line.meterSold) > 0 ? Number(line.meterSold) : null,
         lineTotal: Number(line.lineTotal),
@@ -348,7 +355,8 @@ export class SalesService {
                   itemCodeSnapshot: variant.product.itemCode,
                   itemNameSnapshot: variant.product.name,
                   colorNameSnapshot: variant.color,
-                  colorCodeSnapshot: variant.colorCode,
+                  colorCodeSnapshot: variant.color,
+                  descriptionSnapshot: variant.product.description,
                 },
               });
               let rollsLeft = requested.rollsSold;

@@ -85,6 +85,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   auditLogs    AuditLog[]
+  invoiceImports InvoiceImportDraft[]
 }
 
 model Supplier {
@@ -165,8 +166,10 @@ model ProductVariant {
   productId     String
   product       Product         @relation(fields: [productId], references: [id])
   color         String
-  colorCode     String          @default("#8B5A2B")
-  size          String?
+  /// Deprecated: preserved for migration review only.
+  legacyColorCode String?
+  /// Deprecated: Description / Size now belongs to Product.
+  legacySize    String?
   variantKey    String
   searchText    String          @default("")
   archivedAt    DateTime?
@@ -179,7 +182,7 @@ model ProductVariant {
 
   @@unique([productId, variantKey])
   @@index([color])
-  @@index([size])
+  @@index([legacySize])
 }
 
 model InventoryBatch {
@@ -312,7 +315,9 @@ model SaleLine {
   itemCodeSnapshot String?
   itemNameSnapshot String?
   colorNameSnapshot String?
+  /// Legacy column retained; new sales store the textual supplier code here.
   colorCodeSnapshot String?
+  descriptionSnapshot String?
   allocations  SaleRollAllocation[]
   batchAllocations SaleBatchAllocation[]
   createdAt    DateTime             @default(now())
@@ -436,4 +441,77 @@ model StoreSettings {
   brandAccent           String   @default("#9A5B35")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+}
+
+// Read-only migration evidence. Keep these models so future migrations preserve the tables.
+model SupplierInvoiceMigrationArchive {
+  id                         String?
+  productId                  String?
+  color                      String?
+  legacyColorCode            String?
+  legacySize                 String?
+  variantKey                 String?
+  searchText                 String?
+  archivedAt                 DateTime?
+  createdAt                  DateTime?
+  updatedAt                  DateTime?
+  itemCode                   String?
+  originalProductDescription String?
+
+  @@ignore
+}
+
+model SupplierInvoiceMigrationConflict {
+  productId String
+  itemCode  String
+  reason    String
+  values    Json
+
+  @@ignore
+}
+
+// Temporary review data only. No relation to Purchase or inventory entities.
+enum InvoiceImportStatus {
+  UPLOADED
+  PARSING
+  REVIEW
+  FAILED
+  CONFIRMED
+  EXPIRED
+}
+
+enum InvoiceParsingMethod {
+  PDF_TEXT
+  OCR
+  HYBRID
+}
+
+model InvoiceImportDraft {
+  id                        String @id @default(uuid())
+  originalFileName           String
+  mimeType                  String
+  fileSize                  Int
+  sha256Hash                String
+  temporaryStorageKey       String
+  status                    InvoiceImportStatus @default(UPLOADED)
+  parsingMethod             InvoiceParsingMethod?
+  parsedData                Json?
+  reviewedData              Json?
+  parseWarnings             Json?
+  parseErrors               Json?
+  detectedSupplierName      String?
+  detectedContainerNumber   String?
+  detectedInvoiceTotalRolls Int?
+  detectedInvoiceTotalMeter Decimal? @db.Decimal(12, 2)
+  parsedTotalRolls           Int?
+  parsedTotalMeter           Decimal? @db.Decimal(12, 2)
+  uploadedById              String
+  uploadedBy                User @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  expiresAt                 DateTime
+
+  @@index([sha256Hash])
+  @@index([uploadedById, status])
+  @@index([expiresAt, status])
 }
