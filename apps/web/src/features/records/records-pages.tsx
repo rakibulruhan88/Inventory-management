@@ -1,3 +1,4 @@
+import { SourceDocument } from "@/features/purchases/source-document";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ContainerSummary,
@@ -630,6 +631,7 @@ export function ContainersPage() {
               <span>{c.totalRolls} Rolls</span>
               <span>{c.totalMeters} Meter</span>
             </div>
+            {c.documents?.map(document => <SourceDocument key={document.id} document={document} />)}
           </article>
         ))}
       </div>

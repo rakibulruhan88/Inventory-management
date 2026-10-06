@@ -14,6 +14,8 @@ import {
 } from './structural-labels.js';
 import { extractInvoiceSupplier } from './supplier-extraction.js';
 
+import { extractInvoiceDate } from './invoice-date.js';
+
 export const INVOICE_PARSER_VERSION = 3;
 const numeric = /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/;
 export function parseInvoiceNumber(
@@ -450,7 +452,10 @@ export function parseCommercialInvoice(
       'Invoice and safely assigned parsed Meter totals do not match.',
       'parsedTotals.meter',
     );
+  const date = extractInvoiceDate(lines);
+  if (date.uncertain) issue('INVOICE_DATE_UNCERTAIN', 'Invoice date is malformed, conflicting or uncertain. Enter a verified Purchase Date.', 'purchasedAt');
   return {
+    purchasedAt: date.purchasedAt,
     parserVersion: INVOICE_PARSER_VERSION,
     draftId,
     parsingMethod: document.method,

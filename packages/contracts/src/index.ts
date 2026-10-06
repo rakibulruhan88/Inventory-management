@@ -106,6 +106,7 @@ export type CustomerDetails = CustomerSummary & {
   sales: SaleSummary[];
 };
 export type ContainerSummary = {
+  documents?: PurchaseDocumentSummary[];
   id: string;
   containerNumber: string;
   supplierName: string;
@@ -127,6 +128,7 @@ export type SaleSummary = {
   status: string;
 };
 export type PurchaseSummary = {
+  documents?: PurchaseDocumentSummary[];
   id: string;
   purchaseNumber: string;
   supplierName: string;
@@ -354,6 +356,8 @@ export type InvoiceImportUnassignedRow = {
   source: NonNullable<InvoiceImportColor["source"]>;
 };
 export type InvoiceImportReview = {
+  purchasedAt?: string | null;
+  purchaseNumber?: string | null;
   parserVersion: number;
   draftId: string;
   parsingMethod: InvoiceParsingMethod;
@@ -377,6 +381,8 @@ export type InvoiceImportReview = {
 };
 // Only editable business fields; totals and matching metadata are server-owned.
 export type InvoiceImportReviewInput = {
+  purchasedAt?: string | null;
+  purchaseNumber?: string | null;
   supplier: { name: string; phone: string | null; fax: string | null; address: string | null; contactPerson: string | null };
   containerNumber: string;
   items: {
@@ -386,6 +392,7 @@ export type InvoiceImportReviewInput = {
   }[];
 };
 export type InvoiceImportDraftResponse = {
+  confirmedPurchaseId?: string | null;
   originalExtractedData: InvoiceImportReview | null;
   hasReviewedChanges: boolean;
   validationPassed: boolean;
@@ -409,3 +416,27 @@ export type InvoiceImportUploadResponse = InvoiceImportDraftResponse & {
   previousDraftId: string | null;
 };
 export type InvoiceImportLimits = { maxFileBytes: number; supportedMimeTypes: string[] };
+
+export type PurchaseDocumentSummary = {
+  id: string; purchaseId: string; containerId: string; documentType: "COMMERCIAL_INVOICE";
+  originalFileName: string; mimeType: string; fileSize: number; sha256Hash: string; createdAt: string;
+};
+export type PurchaseDetails = PurchaseSummary & {
+  containerId: string;
+  documents: PurchaseDocumentSummary[];
+  lines: { id: string; itemCode: string; description: string | null; color: string; rolls: number; meter: number }[];
+};
+export type InvoiceImportConfirmationResponse = {
+  purchase: ReceivePurchaseResponse; containerId: string; document: PurchaseDocumentSummary;
+  itemCount: number; colorCount: number; alreadyConfirmed: boolean; purchaseStatus: string;
+};
+// The existing editable manual reference default, shared with import review.
+export function defaultPurchaseNumber(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `PUR-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+}
+export function validPurchaseDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number(value.slice(0, 4)) < 1900) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}

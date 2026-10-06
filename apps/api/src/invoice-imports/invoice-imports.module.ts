@@ -1,3 +1,7 @@
+import { PurchasesModule } from '../purchases/purchases.module.js';
+import { InvoiceConfirmationService } from './invoice-confirmation.service.js';
+import { PurchaseDocumentsController } from './purchase-documents.controller.js';
+import { PurchaseDocumentsService } from './purchase-documents.service.js';
 import { Module } from '@nestjs/common';
 import { InvoiceImportsController } from './invoice-imports.controller.js';
 import { InvoiceImportsService } from './invoice-imports.service.js';
@@ -7,9 +11,12 @@ import { ImportAccessGuard } from './import-access.guard.js';
 import { InvoiceUploadInterceptor } from './invoice-upload.interceptor.js';
 
 @Module({
-  controllers: [InvoiceImportsController],
+  imports: [PurchasesModule],
+  controllers: [InvoiceImportsController, PurchaseDocumentsController],
   providers: [
     InvoiceImportsService,
+    InvoiceConfirmationService,
+    PurchaseDocumentsService,
     DocumentExtractor,
     ImportAccessGuard,
     InvoiceUploadInterceptor,

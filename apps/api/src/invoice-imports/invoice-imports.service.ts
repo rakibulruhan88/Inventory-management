@@ -4,11 +4,12 @@ import {
   GoneException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   InvoiceImportDraftResponse,
   InvoiceImportIssue,
@@ -19,7 +20,12 @@ import { Prisma, type InvoiceImportDraft } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizeCode, normalizeText } from '../common/normalize.js';
 import { importConfig, SUPPORTED_MIME_TYPES } from './import-config.js';
-import { INVOICE_STORAGE, type InvoiceStorage } from './invoice-storage.js';
+import {
+  INVOICE_STORAGE,
+  isTemporaryInvoiceKey,
+  isPermanentInvoiceKey,
+  type InvoiceStorage,
+} from './invoice-storage.js';
 import { validateUpload, type InvoiceUpload } from './upload-validation.js';
 import { DocumentExtractor } from './document-extractor.js';
 import { DocumentReadError } from './document-types.js';
@@ -43,6 +49,7 @@ const json = (value: unknown) =>
 
 @Injectable()
 export class InvoiceImportsService {
+  private readonly logger = new Logger(InvoiceImportsService.name);
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ConfigService) private readonly config: ConfigService,
@@ -315,10 +322,43 @@ export class InvoiceImportsService {
       );
     return this.get(id, userId);
   }
-  private async matchExisting(review: InvoiceImportReview) {
+  async revalidateForConfirmation(
+    review: InvoiceImportReview,
+    original: InvoiceImportReview,
+    db: Prisma.TransactionClient,
+  ) {
+    // Do not trust saved totals, source totals, readiness, warnings or match IDs.
+    validateReviewInput(reviewInput(review));
+    review.invoiceTotals = structuredClone(original.invoiceTotals);
+    review.unassignedRows = structuredClone(original.unassignedRows);
+    review.supplier.matchedSupplierId = null;
+    review.supplier.matchStatus = review.supplier.detectedName
+      ? 'NEW'
+      : 'NOT_DETECTED';
+    for (const item of review.items) {
+      item.matchedProductId = null;
+      item.existingDescription = null;
+      item.matchStatus = 'NEW';
+      item.descriptionMissingInExisting = false;
+      for (const color of item.colors) {
+        color.matchedVariantId = null;
+        color.matchStatus = 'NEW';
+      }
+    }
+    review.warnings = currentSourceIssues(original, review);
+    recalculate(review);
+    await this.matchExisting(review, db);
+    const issues = blockingIssues(review, true);
+    review.validationPassed = !issues.length;
+    return issues;
+  }
+  private async matchExisting(
+    review: InvoiceImportReview,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
     // Exact normalized identity only. Fuzzy search must never silently select a master.
     if (review.supplier.detectedName) {
-      const suppliers = await this.prisma.supplier.findMany({
+      const suppliers = await db.supplier.findMany({
         where: {
           archivedAt: null,
           name: {
@@ -342,7 +382,7 @@ export class InvoiceImportsService {
         });
       }
     }
-    const products = await this.prisma.product.findMany({
+    const products = await db.product.findMany({
       where: {
         normalizedItemCode: {
           in: review.items.map((item) => normalizeCode(item.itemCode)),
@@ -418,7 +458,7 @@ export class InvoiceImportsService {
     }
     if (
       review.containerNumber &&
-      (await this.prisma.container.findUnique({
+      (await db.container.findUnique({
         where: {
           normalizedContainerNumber: normalizeCode(review.containerNumber),
         },
@@ -436,6 +476,44 @@ export class InvoiceImportsService {
       review.totalsMatch.meter === true;
   }
   async cleanupExpired(now = new Date()) {
+    const confirmed = await this.prisma.invoiceImportDraft.findMany({
+      where: {
+        status: 'CONFIRMED',
+        expiresAt: { lte: now },
+        temporaryStorageKey: { not: '' },
+      },
+      take: 100,
+    });
+    for (const draft of confirmed) {
+      if (
+        !draft.confirmedPurchaseId ||
+        !isTemporaryInvoiceKey(draft.temporaryStorageKey)
+      )
+        continue;
+      try {
+        const doc = await this.prisma.purchaseDocument.findUnique({
+          where: { purchaseId: draft.confirmedPurchaseId },
+        });
+        if (!doc || !isPermanentInvoiceKey(doc.storageKey)) continue;
+        const bytes = await this.storage.read(doc.storageKey);
+        if (createHash('sha256').update(bytes).digest('hex') !== doc.sha256Hash)
+          continue;
+        await this.storage.remove(draft.temporaryStorageKey);
+        await this.prisma.invoiceImportDraft.updateMany({
+          where: {
+            id: draft.id,
+            status: 'CONFIRMED',
+            temporaryStorageKey: draft.temporaryStorageKey,
+          },
+          data: { temporaryStorageKey: '' },
+        });
+      } catch {
+        this.logger.warn(
+          `Confirmed import ${draft.id} needs source cleanup recovery. Temporary source and history were retained.`,
+        );
+      }
+    }
+
     // Retry EXPIRED records too, so a failed filesystem deletion is recoverable.
     const drafts = await this.prisma.invoiceImportDraft.findMany({
       where: {
@@ -452,6 +530,12 @@ export class InvoiceImportsService {
     });
     let removed = 0;
     for (const draft of drafts) {
+      if (!isTemporaryInvoiceKey(draft.temporaryStorageKey)) {
+        this.logger.warn(
+          `Import ${draft.id} has an invalid temporary storage reference. Cleanup skipped it.`,
+        );
+        continue;
+      }
       const claimed = await this.prisma.invoiceImportDraft.updateMany({
         where: {
           id: draft.id,
@@ -487,7 +571,9 @@ export class InvoiceImportsService {
       (draft.parsedData as InvoiceImportReview | null)?.parserVersion !==
         INVOICE_PARSER_VERSION;
     const original =
-      expired || requiresReparse || draft.status !== 'REVIEW'
+      expired ||
+      requiresReparse ||
+      !['REVIEW', 'CONFIRMED'].includes(draft.status)
         ? null
         : (draft.parsedData as InvoiceImportReview | null);
     const current = original
@@ -509,10 +595,16 @@ export class InvoiceImportsService {
       : [];
     if (current) current.validationPassed = issues.length === 0;
     return {
+      confirmedPurchaseId: draft.confirmedPurchaseId,
       originalExtractedData: original,
       hasReviewedChanges,
       validationPassed: Boolean(current && !issues.length),
-      readyForConfirmation: Boolean(current && !issues.length),
+      readyForConfirmation: Boolean(
+        draft.status === 'REVIEW' &&
+        draft.reviewedData &&
+        current &&
+        !issues.length,
+      ),
       blockingIssues: issues,
       requiresReparse,
       id: draft.id,

@@ -117,6 +117,21 @@ describe("editable invoice review form domain", () => {
       expect(() => reviewPayload(edit)).toThrow();
     },
   );
+  it("preserves the invoice date and editable reference without inventing a missing purchase date", () => {
+    const source = structuredClone(extracted);
+    source.purchasedAt = "2026-09-30";
+    const edit = editableReview(source, source);
+    expect(edit.purchasedAt).toBe("2026-09-30");
+    expect(edit.purchaseNumber).toMatch(/^PUR-\d{8}-\d{4}$/);
+    edit.purchasedAt = "2026-10-01";
+    edit.purchaseNumber = "PUR-OWNER-REFERENCE";
+    expect(reviewPayload(edit)).toMatchObject({
+      purchasedAt: "2026-10-01",
+      purchaseNumber: "PUR-OWNER-REFERENCE",
+    });
+    expect(source.purchasedAt).toBe("2026-09-30");
+    expect(editableReview(extracted, extracted).purchasedAt).toBeNull();
+  });
   it("keeps newly added rows without fabricated source locations", () => {
     const edit = editableReview(extracted, extracted);
     edit.items[0].colors.push({ color: "New", rolls: "1", meter: "" });

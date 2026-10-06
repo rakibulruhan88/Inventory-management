@@ -27,6 +27,7 @@ function ReviewField({
   errors,
   hint,
   numeric: numberField = false,
+  type = "text",
 }: {
   label: string;
   path: string;
@@ -35,6 +36,7 @@ function ReviewField({
   errors: InvoiceImportIssue[];
   hint?: string;
   numeric?: boolean;
+  type?: "text" | "date";
 }) {
   const error = errors.find((e) => e.field === path)?.message;
   const id = `review-${path.replaceAll(".", "-")}`;
@@ -48,6 +50,7 @@ function ReviewField({
       </label>
       <Input
         id={id}
+        type={type}
         value={value}
         inputMode={numberField ? "decimal" : "text"}
         onChange={(e) => onChange(e.target.value)}
@@ -237,6 +240,23 @@ export function InvoiceReviewEditor({
           Imported supplier, shipment and items
         </legend>
         <div className="grid gap-3 border-y border-[var(--border)] py-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ReviewField
+            label="Purchase Date"
+            type="date"
+            path="purchasedAt"
+            value={edit.purchasedAt ?? ""}
+            onChange={(value) => update({ ...edit, purchasedAt: value })}
+            errors={errors}
+            hint="Use the date on the Commercial Invoice."
+          />
+          <ReviewField
+            label="Purchase Reference"
+            path="purchaseNumber"
+            value={edit.purchaseNumber ?? ""}
+            onChange={(value) => update({ ...edit, purchaseNumber: value })}
+            errors={errors}
+            hint="Same editable reference as manual receiving."
+          />
           {(
             [
               ["name", "Supplier name"],

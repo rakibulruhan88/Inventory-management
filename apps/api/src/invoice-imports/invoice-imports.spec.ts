@@ -78,6 +78,8 @@ function memoryPrisma() {
     parsingMethod: null,
     parsedData: null,
     reviewedData: null,
+    confirmedPurchaseId: null,
+    confirmedAt: null,
     parseWarnings: null,
     parseErrors: null,
     detectedSupplierName: null,
@@ -486,7 +488,11 @@ describe('safe upload storage and review-only import service', () => {
     return {
       id: parsed.id,
       original: structuredClone(parsed.originalExtractedData!),
-      input: reviewInput(parsed.review!),
+      input: {
+        ...reviewInput(parsed.review!),
+        purchasedAt: '2026-09-30',
+        purchaseNumber: 'PUR-TEST',
+      },
     };
   }
   it.each([
@@ -766,7 +772,11 @@ describe('safe upload storage and review-only import service', () => {
     expect(parsed.review!.parsedTotals).toEqual({ rolls: 964, meter: 35063 });
     expect(parsed.review!.invoiceTotals).toEqual({ rolls: 964, meter: 35050 });
     expect(parsed.readyForConfirmation).toBe(false);
-    const input = reviewInput(parsed.review!);
+    const input = {
+      ...reviewInput(parsed.review!),
+      purchasedAt: '2026-09-30',
+      purchaseNumber: 'PUR-TEST',
+    };
     input.items
       .find((item) => item.itemCode === 'K311')!
       .colors.find((color) => color.color === '906#Khaki')!.meter = 1500;

@@ -1,3 +1,4 @@
+import { defaultPurchaseNumber } from "@afia/contracts";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -135,7 +136,7 @@ export function PurchaseReceivePage() {
     defaultValues: {
       supplier: { id: undefined, name: "", email: "", phone: "", address: "" },
       containerNumber: "",
-      purchaseNumber: `PUR-${format(new Date(), "yyyyMMdd-HHmm")}`,
+      purchaseNumber: defaultPurchaseNumber(new Date()),
       purchasedAt: format(new Date(), "yyyy-MM-dd"),
       notes: "",
       items: [newItem()],

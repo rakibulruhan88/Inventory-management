@@ -1,4 +1,6 @@
 import type {
+  InvoiceImportConfirmationResponse,
+  PurchaseDetails,
   InvoiceImportReviewInput,
   InvoiceImportIssue,
   InvoiceImportDraftResponse,
@@ -77,10 +79,12 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const body = (await response.json().catch(() => null)) as {
       message?: string | string[];
       fieldErrors?: InvoiceImportIssue[];
+      blockingIssues?: InvoiceImportIssue[];
     } | null;
     const message = Array.isArray(body?.message)
       ? body.message[0]
       : body?.message;
+    if (body?.blockingIssues) throw new ApiFieldError(message ?? "Review the blocking issues.", body.blockingIssues);
     if (body?.fieldErrors) throw new ApiFieldError(message ?? "Check the review fields.", body.fieldErrors);
     throw new Error(message ?? "Something went wrong. Please try again.");
   }
@@ -175,6 +179,7 @@ export async function downloadSaleInvoicePdf(id: string) {
     const body = (await response.json().catch(() => null)) as {
       message?: string | string[];
       fieldErrors?: InvoiceImportIssue[];
+      blockingIssues?: InvoiceImportIssue[];
     } | null;
     throw new Error(
       Array.isArray(body?.message)
@@ -345,4 +350,12 @@ export function resetInvoiceReview(id: string) {
   return apiRequest<InvoiceImportDraftResponse>(`/invoice-imports/${encodeURIComponent(id)}/review/reset`, {
     method: "POST", headers: { "X-Afia-Invoice-Import": "1" }, body: JSON.stringify({}),
   });
+}
+
+export function confirmInvoiceImport(id: string) {
+  return apiRequest<InvoiceImportConfirmationResponse>(`/invoice-imports/${encodeURIComponent(id)}/confirm`, { method: "POST", headers: { "X-Afia-Invoice-Import": "1" }, body: JSON.stringify({}) });
+}
+export function getPurchase(id: string) { return apiRequest<PurchaseDetails>(`/purchases/${encodeURIComponent(id)}`); }
+export function documentContentUrl(id: string, download = false) {
+  return `${apiUrl}/documents/${encodeURIComponent(id)}/content${download ? '?download=true' : ''}`;
 }

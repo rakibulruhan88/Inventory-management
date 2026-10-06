@@ -5,6 +5,7 @@ import type {
   InvoiceImportDraftResponse,
   InvoiceImportReview,
 } from "@afia/contracts";
+import { InvoiceConfirmation } from "./invoice-confirmation";
 import { InvoiceReviewEditor } from "./invoice-review-editor";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +54,7 @@ export function InvoiceImportPanel({
   const [error, setError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<string | null>(null);
   const [phase, setPhase] = useState<
-    "idle" | "uploading" | "reading" | "refreshing" | "saving"
+    "idle" | "uploading" | "reading" | "refreshing" | "saving" | "confirming"
   >("idle");
   const busy = phase !== "idle";
   const chooseFile = (selected?: File) => {
@@ -151,7 +152,8 @@ export function InvoiceImportPanel({
           Import Commercial Invoice
         </h2>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Upload and review the document. This step does not receive stock.
+          Upload, review and confirm your Commercial Invoice. Stock changes only
+          after confirmation.
         </p>
       </div>
       <div className="space-y-4 p-4 sm:p-5">
@@ -229,7 +231,9 @@ export function InvoiceImportPanel({
                   ? "Refreshing result"
                   : phase === "saving"
                     ? "Saving review"
-                    : "Upload and read"}
+                    : phase === "confirming"
+                      ? "Receiving stock"
+                      : "Upload and read"}
           </Button>
           {draft &&
             !busy &&
@@ -252,8 +256,12 @@ export function InvoiceImportPanel({
             {busy
               ? phase === "saving"
                 ? "Saving corrections to this temporary draft."
-                : "Keep this page open while the document is read."
-              : "Review data only · No inventory changes"}
+                : phase === "confirming"
+                  ? "Receiving stock and archiving the original source."
+                  : "Keep this page open while the document is read."
+              : draft?.status === "CONFIRMED"
+                ? "Receipt saved · Original source archived"
+                : "Review data only · No inventory changes"}
           </span>
         </div>
         <div id="invoice-import-error">
@@ -283,9 +291,31 @@ export function InvoiceImportPanel({
                   ` · ${draft.parsingMethod.replaceAll("_", " ")}`}
               </span>
               <span>
-                Temporary · Expires {new Date(draft.expiresAt).toLocaleString()}
+                {draft.status === "CONFIRMED"
+                  ? "Source archived · Receipt confirmed"
+                  : `Temporary · Expires ${new Date(draft.expiresAt).toLocaleString()}`}
               </span>
             </div>
+            {!editing && (
+              <InvoiceConfirmation
+                disabled={busy}
+                key={draft.id}
+                draft={draft}
+                onBusyChange={(value) => {
+                  inFlight.current = value;
+                  setPhase(value ? "confirming" : "idle");
+                }}
+                onConfirmed={(purchaseId) => {
+                  setSavedMessage(null);
+                  setDraft({
+                    ...draft,
+                    status: "CONFIRMED",
+                    confirmedPurchaseId: purchaseId,
+                    readyForConfirmation: false,
+                  });
+                }}
+              />
+            )}
             {draft.requiresReparse && (
               <p role="alert" className="text-sm text-[var(--danger)]">
                 This draft was read by an older parser. Read it again before
@@ -340,7 +370,7 @@ export function InvoiceImportPanel({
                   <InvoiceReview review={draft.review} draft={draft} />
                   <Button
                     type="button"
-                    disabled={busy}
+                    disabled={busy || draft.status !== "REVIEW"}
                     onClick={() => {
                       setSavedMessage(null);
                       setEditing(true);
@@ -371,9 +401,11 @@ function InvoiceReview({
         <p
           className={`mt-1 text-sm ${review.validationPassed ? "text-[var(--muted)]" : "text-[var(--danger)]"}`}
         >
-          {draft.readyForConfirmation
-            ? "Validation passed. Stock confirmation will be available in a later step."
-            : "Needs review before this data can be used to receive stock."}
+          {draft.status === "CONFIRMED"
+            ? "Confirmed review retained with the archived source invoice."
+            : draft.readyForConfirmation
+              ? "Validation passed. Review the receipt summary before confirming stock."
+              : "Needs review before this data can be used to receive stock."}
         </p>
       </div>
       {draft.blockingIssues.length > 0 && (
@@ -422,6 +454,13 @@ function InvoiceReview({
           </dd>
         </div>
         <div>
+          <dt className="text-xs text-[var(--muted)]">
+            Purchase Date / Reference
+          </dt>
+          <dd className="mb-3 mt-1 break-words text-sm">
+            {review.purchasedAt || "Needs review"} ·{" "}
+            {review.purchaseNumber || "Needs review"}
+          </dd>
           <dt className="text-xs text-[var(--muted)]">Container Number</dt>
           <dd className="mt-1 break-all text-sm font-medium">
             {review.containerNumber ?? "Needs review"}

@@ -1,3 +1,4 @@
+import { defaultPurchaseNumber } from "@afia/contracts";
 import type {
   InvoiceImportReview,
   InvoiceImportReviewInput,
@@ -18,6 +19,8 @@ export function editableReview(
   original: InvoiceImportReview,
 ): EditableReview {
   return {
+    purchasedAt: review.purchasedAt ?? null,
+    purchaseNumber: review.purchaseNumber ?? defaultPurchaseNumber(new Date()),
     supplier: {
       name: review.supplier.detectedName ?? "",
       phone: review.supplier.phone,
@@ -70,6 +73,8 @@ function parsedNumber(value: string, optional: boolean): number | null {
 export function reviewPayload(edit: EditableReview): InvoiceImportReviewInput {
   return {
     ...edit,
+    purchasedAt: edit.purchasedAt || null,
+    purchaseNumber: edit.purchaseNumber?.trim() || null,
     items: edit.items.map((item) => ({
       ...item,
       description: item.description.trim() || null,

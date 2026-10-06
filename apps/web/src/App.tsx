@@ -27,6 +27,7 @@ const PurchaseReceivePage = lazy(() =>
     default: m.PurchaseReceivePage,
   })),
 );
+const PurchaseDetailsPage = lazy(() => import("@/features/purchases/purchase-details-page").then(m => ({ default: m.PurchaseDetailsPage })));
 const NewSalePage = lazy(() =>
   import("@/features/sales/new-sale-page").then((m) => ({
     default: m.NewSalePage,
@@ -126,7 +127,7 @@ function PurchasesPage() {
           <ul>
             {q.data.map((x) => (
               <li key={x.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-3 last:border-0 hover:bg-[var(--page)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_5rem_7rem_9rem]">
-                <div className="min-w-0"><p className="break-words text-sm font-semibold">{x.purchaseNumber}</p><p className="mt-1 break-words text-xs text-[var(--muted)] md:hidden">{x.supplierName} · {x.containerNumber}</p></div>
+                <div className="min-w-0"><NavLink className="break-words text-sm font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-[var(--primary)]" to={`/purchases/${x.id}`}>{x.purchaseNumber}</NavLink><p className="mt-1 break-words text-xs text-[var(--muted)] md:hidden">{x.supplierName} · {x.containerNumber}</p></div>
                 <div className="hidden min-w-0 md:block"><p className="break-words text-sm">{x.supplierName}</p><p className="mt-1 break-words text-xs text-[var(--muted)]">{x.containerNumber}</p></div>
                 <div className="max-w-32 break-words text-right tabular-nums md:hidden"><p className="text-sm font-semibold">{x.totalRolls} <span className="text-xs font-normal text-[var(--muted)]">Rolls</span></p><p className="mt-1 text-xs text-[var(--muted)]">{x.totalMeters.toLocaleString()} Meter</p></div>
                 <p className="hidden break-words text-right text-sm font-medium tabular-nums md:block">{x.totalRolls}<span className="sr-only"> Rolls</span></p>
@@ -203,6 +204,7 @@ export default function App() {
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/inventory" element={<InventoryPage />} />
                   <Route path="/purchases" element={<PurchasesPage />} />
+                  <Route path="/purchases/:id" element={<PurchaseDetailsPage />} />
                   <Route
                     path="/purchases/new"
                     element={<PurchaseReceivePage />}

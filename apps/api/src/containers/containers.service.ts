@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { ContainerSummary, ContainerUpdateInput } from '@afia/contracts';
 import { normalizeCode, normalizeText } from '../common/normalize.js';
+import { documentSummary } from '../invoice-imports/purchase-documents.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 @Injectable()
 export class ContainersService {
@@ -42,6 +43,7 @@ export class ContainersService {
         receivedAt: true,
         notes: true,
         supplier: { select: { name: true } },
+        purchase: { include: { documents: true } },
         batches: {
           select: {
             variantId: true,
@@ -71,6 +73,10 @@ export class ContainersService {
           .toFixed(2),
       ),
       notes: container.notes,
+      documents:
+        container.purchase?.documents.map((doc) =>
+          documentSummary(doc, container.id),
+        ) ?? [],
     }));
   }
   async update(id: string, input: ContainerUpdateInput) {

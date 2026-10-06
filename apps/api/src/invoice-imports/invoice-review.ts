@@ -4,6 +4,7 @@ import type {
   InvoiceImportReview,
   InvoiceImportReviewInput,
 } from '@afia/contracts';
+import { validPurchaseDate } from '@afia/contracts';
 import { normalizeCode } from '../common/normalize.js';
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -46,7 +47,13 @@ export function validateReviewInput(value: unknown): InvoiceImportReviewInput {
           : 'Enter text within the supported length, or leave blank.',
       );
   }
-  if (object(value, ['supplier', 'containerNumber', 'items'], '')) {
+  if (
+    object(
+      value,
+      ['supplier', 'containerNumber', 'items', 'purchasedAt', 'purchaseNumber'],
+      '',
+    )
+  ) {
     if (
       object(
         value.supplier,
@@ -64,6 +71,14 @@ export function validateReviewInput(value: unknown): InvoiceImportReviewInput {
         );
     }
     text(value.containerNumber, 'containerNumber', true);
+    if (
+      value.purchasedAt !== undefined &&
+      value.purchasedAt !== null &&
+      !validPurchaseDate(value.purchasedAt)
+    )
+      error('purchasedAt', 'Enter a valid Purchase Date (YYYY-MM-DD).');
+    if (value.purchaseNumber !== undefined && value.purchaseNumber !== null)
+      text(value.purchaseNumber, 'purchaseNumber', true);
     if (
       !Array.isArray(value.items) ||
       !value.items.length ||
@@ -198,6 +213,8 @@ export function reviewInput(
   review: InvoiceImportReview,
 ): InvoiceImportReviewInput {
   return {
+    purchasedAt: review.purchasedAt ?? null,
+    purchaseNumber: review.purchaseNumber ?? null,
     supplier: {
       name: review.supplier.detectedName ?? '',
       phone: review.supplier.phone,
@@ -223,6 +240,8 @@ export function buildReviewedData(
   input: InvoiceImportReviewInput,
 ): InvoiceImportReview {
   const review = structuredClone(original);
+  review.purchasedAt = input.purchasedAt ?? null;
+  review.purchaseNumber = input.purchaseNumber?.trim() || null;
   review.supplier = {
     detectedName: input.supplier.name.trim(),
     phone: input.supplier.phone?.trim() || null,
@@ -381,6 +400,18 @@ export function blockingIssues(
   reviewed: boolean,
 ): InvoiceImportIssue[] {
   const issues = fieldIssues(reviewInput(review));
+  if (!validPurchaseDate(review.purchasedAt))
+    issues.push({
+      code: 'PURCHASE_DATE_REQUIRED',
+      field: 'purchasedAt',
+      message: 'Enter a verified Purchase Date before receiving stock.',
+    });
+  if (!review.purchaseNumber?.trim())
+    issues.push({
+      code: 'PURCHASE_REFERENCE_REQUIRED',
+      field: 'purchaseNumber',
+      message: 'Enter a Purchase Reference before receiving stock.',
+    });
   for (const key of ['rolls', 'meter'] as const) {
     if (review.totalsMatch[key] === false)
       issues.push({
@@ -421,6 +452,7 @@ export function blockingIssues(
     'ROW_LAYOUT_UNAVAILABLE',
   ]);
   const recalculatedOrInformational = new Set([
+    'INVOICE_DATE_UNCERTAIN',
     'DESCRIPTION_MISSING',
     'PDF_TEXT_FAILED',
     'SUPPLIER_MISSING',
