@@ -113,3 +113,10 @@ describe("Print and mobile structure", () => {
     expect(receiptSource).toContain("Print Receipt");
   });
 });
+
+it("prints Meter mode, amount and price basis", () => {
+  const html = invoiceHtml({ ...invoice, lines: [{ ...invoice.lines[0], mode: "BY_METER", rollsSold: 0, meterSold: 50, unitPricePerRoll: null, unitPricePerMeter: 120, lineTotal: 6000 }] });
+  expect(html).toContain("Sell By: Meter");
+  expect(html).toContain('data-label="Unit Price / Meter">৳120');
+  expect(html).toContain("50 Meter × ৳120 = ৳6,000");
+});

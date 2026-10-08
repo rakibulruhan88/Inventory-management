@@ -65,8 +65,9 @@ export class CustomersController {
       }),
     )
     input: CustomerDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.customers.create(input);
+    return this.customers.create(input, user.id);
   }
   @Post('with-opening-due') createWithOpeningDue(
     @Body(
@@ -122,8 +123,9 @@ export class CustomersController {
       }),
     )
     input: CustomerDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.customers.update(id, input);
+    return this.customers.update(id, input, user.id);
   }
   @Post(':id/payments') payment(
     @Param('id') id: string,
@@ -153,8 +155,8 @@ export class CustomersController {
       );
     return this.customers.receivePayment(id, input, user.id);
   }
-  @Delete(':id') archive(@Param('id') id: string) {
-    return this.customers.archive(id);
+  @Delete(':id') archive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.customers.archive(id, user.id);
   }
 }
 

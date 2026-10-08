@@ -1,3 +1,4 @@
+import { auditMutation } from '../activity/activity-write.js';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   SupplierDetails,
@@ -127,34 +128,34 @@ export class SuppliersService {
     };
   }
 
-  async create(input: SupplierInput): Promise<SupplierSummary> {
-    const supplier = await this.prisma.supplier.create({
+  async create(input: SupplierInput, actorId?: string): Promise<SupplierSummary> {
+    const supplier = await auditMutation(this.prisma, { action: 'RECORD_CREATED', entityType: 'Supplier', actorId }, async (tx) => tx.supplier.create({
       data: this.normalizedInput(input),
-    });
+    }));
     return this.summary(supplier.id);
   }
 
-  async update(id: string, input: SupplierInput): Promise<SupplierSummary> {
+  async update(id: string, input: SupplierInput, actorId?: string): Promise<SupplierSummary> {
     const existing = await this.prisma.supplier.findFirst({
       where: { id, archivedAt: null },
     });
     if (!existing) throw new NotFoundException('Supplier not found.');
-    await this.prisma.supplier.update({
+    await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'Supplier', entityId: id, actorId }, async (tx) => tx.supplier.update({
       where: { id },
       data: this.normalizedInput(input),
-    });
+    }));
     return this.summary(id);
   }
 
-  async archive(id: string) {
+  async archive(id: string, actorId?: string) {
     const supplier = await this.prisma.supplier.findFirst({
       where: { id, archivedAt: null },
     });
     if (!supplier) throw new NotFoundException('Supplier not found.');
-    await this.prisma.supplier.update({
+    await auditMutation(this.prisma, { action: 'RECORD_ARCHIVED', entityType: 'Supplier', entityId: id, actorId }, async (tx) => tx.supplier.update({
       where: { id },
       data: { archivedAt: new Date() },
-    });
+    }));
     return { id, archived: true };
   }
 

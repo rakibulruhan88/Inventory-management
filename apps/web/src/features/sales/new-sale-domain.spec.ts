@@ -156,3 +156,24 @@ describe("New Sale repeated-row and per-roll domain", () => {
     expect(saleInputNumber("1e3")).toBeNaN();
   });
 });
+
+describe("Meter sale draft", () => {
+  const meterStock = [{ ...stock[0], availableRolls: 0, availableMeter: 200 }];
+  const meterRow = { variantId: "black", mode: "BY_METER" as const, rollsSold: 0, meterSold: 50, unitPricePerMeter: 120 };
+  it("keeps Meter-only stock selectable and previews 50 Meter × 120", () => {
+    expect(colorOptions(meterStock)[0].value).toBe("black");
+    expect(previewAmount(meterRow)).toBe(6000);
+    expect(remainingBeforeRow(meterStock[0], [meterRow])).toEqual({ rolls: 0, meter: 150, repeated: true });
+    expect(newSaleSchema.safeParse({ ...draft, items: [{ productId: "p1", colors: [meterRow] }] }).success).toBe(true);
+  });
+  it("aggregates repeated Meter rows and mixed rows", () => {
+    expect(stockErrors([meterRow, { ...meterRow, meterSold: 151 }], meterStock).get("black")?.meter).toContain("Only 200 Meter");
+    expect(previewSubtotal([row, meterRow])).toBe(7000);
+    expect(stockErrors([row, meterRow], stock).size).toBe(0);
+  });
+  it("rejects zero Meter and fractional Rolls", () => {
+    for (const change of [{ meterSold: 0 }, { rollsSold: 0.5 }, { unitPricePerMeter: 1.001 }]) {
+      expect(newSaleSchema.safeParse({ ...draft, items: [{ productId: "p1", colors: [{ ...meterRow, ...change }] }] }).success).toBe(false);
+    }
+  });
+});

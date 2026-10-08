@@ -131,9 +131,10 @@ export function SaleItemGroup({
       <div className="sale-ledger-head" aria-hidden="true">
         <span>Color</span>
         <span>Stock</span>
+        <span>Sell By</span>
         <span>Rolls</span>
         <span>Meter</span>
-        <span>Unit Price / Roll</span>
+        <span>Unit Price</span>
         <span className="text-right">Amount</span>
         <span />
       </div>
@@ -154,9 +155,12 @@ export function SaleItemGroup({
             : null;
           const colorError = error?.colors?.[colorIndex];
           const stockError = inventoryErrors.get(color.variantId ?? "");
+          const meterMode = color.mode === "BY_METER";
+          const priceField = meterMode ? "unitPricePerMeter" : "unitPricePerRoll";
+          const priceError = meterMode ? colorError?.unitPricePerMeter : colorError?.unitPricePerRoll;
           const rowId = color.entryKey ?? `${itemKey}-${colorIndex}`;
           return (
-            <div key={rowId} className="sale-color-row">
+            <div key={rowId} className={`sale-color-row ${meterMode ? "sale-meter-mode" : ""}`}>
               <div className="sale-color-identity min-w-0">
                 <SearchablePicker
                   triggerId={`sale-color-${itemIndex}-${colorIndex}`}
@@ -209,7 +213,28 @@ export function SaleItemGroup({
                   </>
                 )}
               </div>
-              <label className="sale-rolls min-w-0 text-xs font-medium">
+              <div role="group" aria-label="Sell By" className="sale-mode">
+                <span className="sale-field-label">Sell By</span>
+                <div className="sale-mode-buttons">
+                {(["FULL_ROLL", "BY_METER"] as const).map((mode) => (
+                  <Button key={mode} type="button"
+                    variant="ghost"
+                    aria-pressed={(color.mode ?? "FULL_ROLL") === mode}
+                    onClick={() => {
+                      if ((color.mode ?? "FULL_ROLL") === mode) return;
+                      const path = `items.${itemIndex}.colors.${colorIndex}` as const;
+                      form.setValue(`${path}.mode`, mode, { shouldDirty: true });
+                      form.setValue(`${path}.rollsSold`, mode === "BY_METER" ? 0 : 1);
+                      form.setValue(`${path}.unitPricePerRoll`, undefined);
+                      form.setValue(`${path}.unitPricePerMeter`, undefined);
+                      form.clearErrors(path);
+                    }}>
+                    {mode === "BY_METER" ? "Meter" : "Roll"}
+                  </Button>
+                ))}
+                </div>
+              </div>
+              {meterMode ? <div className="sale-rolls" aria-hidden="true" /> : <label className="sale-rolls min-w-0 text-xs font-medium">
                 <span className="sale-field-label">Rolls</span>
                 <Input
                   className="sale-number-input h-10 bg-white text-right"
@@ -232,7 +257,7 @@ export function SaleItemGroup({
                     {stockError?.rolls || colorError?.rollsSold?.message}
                   </span>
                 )}
-              </label>
+              </label>}
               <label className="sale-meter min-w-0 text-xs font-medium">
                 <span className="sale-field-label">Meter</span>
                 <Input
@@ -259,7 +284,7 @@ export function SaleItemGroup({
                 )}
               </label>
               <label className="sale-price min-w-0 text-xs font-medium">
-                <span className="sale-field-label">Unit Price / Roll</span>
+                <span className="sale-field-label">Unit Price / {meterMode ? "Meter" : "Roll"}</span>
                 <div className="sale-price-input relative">
                   <span
                     aria-hidden="true"
@@ -268,23 +293,25 @@ export function SaleItemGroup({
                     {symbol}
                   </span>
                   <Input
-                    className="h-10 bg-white pl-7 pr-2 text-right"
+                    key={priceField}
+                    className="h-10 bg-white pl-7 pr-14 text-right"
                     inputMode="decimal"
-                    aria-invalid={Boolean(colorError?.unitPricePerRoll)}
+                    aria-invalid={Boolean(priceError)}
                     aria-describedby={`${rowId}-price-error`}
                     {...form.register(
-                      `items.${itemIndex}.colors.${colorIndex}.unitPricePerRoll`,
+                      `items.${itemIndex}.colors.${colorIndex}.${priceField}`,
                       { setValueAs: saleInputNumber },
                     )}
                   />
+                  <span aria-hidden="true" className="sale-price-basis">/ {meterMode ? "Meter" : "Roll"}</span>
                 </div>
-                {colorError?.unitPricePerRoll && (
+                {priceError && (
                   <span
                     role="alert"
                     id={`${rowId}-price-error`}
                     className="mt-1 block text-xs text-[var(--danger)]"
                   >
-                    {colorError.unitPricePerRoll.message}
+                    {priceError.message}
                   </span>
                 )}
               </label>

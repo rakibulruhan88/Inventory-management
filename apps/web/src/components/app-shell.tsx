@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart3, Boxes, Container, LayoutDashboard, Menu, PackagePlus, PanelLeftClose, PanelLeftOpen,
+  History, BarChart3, Boxes, Container, LayoutDashboard, Menu, PackagePlus, PanelLeftClose, PanelLeftOpen,
   ReceiptText, WalletCards, Settings, ShoppingBag, Truck, Users, X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -24,6 +24,7 @@ const navigation = [
   { to: "/suppliers", label: "Suppliers", icon: Truck },
   { to: "/containers", label: "Containers", icon: Container },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/activity", label: "Activity", icon: History },
 ];
 
 function StoreIdentity({ name, logo }: { name: string; logo?: string | null }) {
@@ -41,10 +42,12 @@ function StoreIdentity({ name, logo }: { name: string; logo?: string | null }) {
 const desktopGroups = [
   { label: "Workspace", paths: ["/dashboard", "/inventory", "/purchases", "/sales"] },
   { label: "Money records", paths: ["/payments", "/cashbook", "/reports"] },
-  { label: "Contacts & stock history", paths: ["/customers", "/suppliers", "/containers"] },
+  { label: "Contacts & stock history", paths: ["/customers", "/suppliers", "/containers", "/activity"] },
 ];
 function DesktopNavigation() {
+  const { user } = useAuth();
   return <nav className="desktop-workspace-nav" aria-label="Workspace">{desktopGroups.map((group) => <div className="desktop-nav-group" key={group.label}><p>{group.label}</p>{group.paths.map((path) => {
+    if (path === "/activity" && user?.role !== "OWNER") return null;
     const item = navigation.find((entry) => entry.to === path)!;
     return <NavLink key={item.to} to={item.to} aria-label={item.label} title={item.label} className={({ isActive }) => `desktop-nav-item ${isActive ? "is-active" : ""}`}><item.icon size={17} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span><i aria-hidden="true" /></NavLink>;
   })}</div>)}</nav>;
@@ -58,9 +61,10 @@ function DesktopAccountFooter() {
 }
 
 function WorkspaceNavigation({ onNavigate }: { onNavigate?: () => void }) {
+  const { user } = useAuth();
   return (
     <nav aria-label="Workspace" className="space-y-1">
-      {navigation.map((item) => (
+      {navigation.filter((item) => item.to !== "/activity" || user?.role === "OWNER").map((item) => (
         <div key={item.to} className={item.to === "/customers" ? "border-t border-[var(--border)] pt-4 mt-4" : ""}>
           <NavLink to={item.to} onClick={onNavigate} className={({ isActive }) =>
             `flex min-h-11 items-center gap-3 rounded-md border-l-2 px-3 text-sm font-medium transition-colors ${isActive ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary-strong)]" : "border-transparent text-[var(--foreground-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"}`

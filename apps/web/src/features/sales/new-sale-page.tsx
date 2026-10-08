@@ -40,6 +40,7 @@ import {
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 const blankColor = (): FormData["items"][number]["colors"][number] => ({
+  mode: "FULL_ROLL",
   entryKey: crypto.randomUUID(),
   variantId: "",
   rollsSold: 1,
@@ -170,7 +171,7 @@ export function NewSalePage() {
   const productOptions = Array.from(
     new Map(
       (products.data ?? [])
-        .filter((product) => product.availableRolls > 0)
+        .filter((product) => product.availableRolls > 0 || product.availableMeter > 0)
         .map((product) => [
           product.productId,
           {
@@ -239,7 +240,10 @@ export function NewSalePage() {
         item.colors.map((color) => ({
           variantId: color.variantId,
           rollsSold: color.rollsSold,
-          unitPricePerRoll: color.unitPricePerRoll,
+          mode: color.mode ?? "FULL_ROLL",
+          ...(color.mode === "BY_METER"
+            ? { unitPricePerMeter: color.unitPricePerMeter }
+            : { unitPricePerRoll: color.unitPricePerRoll }),
           meterSold: color.meterSold > 0 ? color.meterSold : undefined,
         })),
       ),
@@ -464,7 +468,7 @@ export function NewSalePage() {
           )}
           {products.isSuccess && !productOptions.length && (
             <p className="py-3 text-sm text-[var(--muted)]">
-              No Rolls available.{" "}
+              No stock available.{" "}
               <Link
                 to="/purchases/new"
                 className="text-[var(--accent)] underline"

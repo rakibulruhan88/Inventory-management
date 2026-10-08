@@ -32,6 +32,7 @@ describe('customer identity PostgreSQL and HTTP regression', () => {
     'Supplier',
     'Purchase',
     'AuditLog',
+    'User',
   ];
   beforeAll(async () => {
     await admin.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
@@ -91,6 +92,8 @@ describe('customer identity PostgreSQL and HTTP regression', () => {
       providers: [{ provide: CustomersService, useValue: customers }],
     }).compile();
     app = module.createNestApplication();
+    const actor = await client.user.create({ data: { name: 'Identity Tester', passwordHash: 'test-only', role: 'OWNER' } });
+    app.use((req: { user?: { id: string } }, _res: unknown, next: () => void) => { req.user = { id: actor.id }; next(); });
     app.useGlobalPipes(
       new ValidationPipe({
         transform: true,
@@ -389,6 +392,7 @@ describe('customer identity PostgreSQL and HTTP regression', () => {
         })
       ).normalizedPhone,
     ).toBe('8801812345678');
-    expect(await client.auditLog.count()).toBe(0);
+    const activity = await client.auditLog.findMany({ where: { entityType: 'Customer', entityId: created.body.id } });
+    expect(activity.map((row) => row.action).sort()).toEqual(['RECORD_CREATED', 'RECORD_UPDATED']);
   });
 });

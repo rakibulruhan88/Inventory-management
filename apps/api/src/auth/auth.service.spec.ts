@@ -4,6 +4,14 @@ import { validate } from 'class-validator';
 import { UpdateAccountDto } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 
+
+function withActivity<T extends { user: object }>(prisma: T) {
+  const tx = { ...prisma, user: { findUnique: vi.fn().mockResolvedValue({ name: 'Owner', role: 'OWNER' }), ...prisma.user },
+    auditLog: { create: vi.fn().mockResolvedValue({ id: 'audit' }) },
+    $queryRaw: vi.fn().mockResolvedValue([{ name: 'Owner', username: 'owner', email: null, role: 'OWNER', isActive: true }]) };
+  return Object.assign(prisma, { $transaction: vi.fn((fn: (tx: unknown) => Promise<unknown>) => fn(tx)), auditLog: tx.auditLog });
+}
+
 describe('owner authentication', () => {
   it('rejects an invalid account email', async () => {
     const input = Object.assign(new UpdateAccountDto(), {
@@ -27,7 +35,7 @@ describe('owner authentication', () => {
       },
     };
     const jwt = { signAsync: vi.fn().mockResolvedValue('signed-token') };
-    const service = new AuthService(prisma as never, {} as never, jwt as never);
+    const service = new AuthService(withActivity(prisma) as never, {} as never, jwt as never);
     const result = await service.login('OWNER', 'correct-horse');
     expect(result).toMatchObject({
       user: { id: 'owner', username: 'owner' },
@@ -52,7 +60,7 @@ describe('owner authentication', () => {
       },
     };
     const service = new AuthService(
-      prisma as never,
+      withActivity(prisma) as never,
       {} as never,
       { signAsync: vi.fn() } as never,
     );
@@ -72,7 +80,7 @@ describe('owner authentication', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withActivity(prisma) as never, {} as never, {} as never);
     await expect(
       service.updateAccount('owner-id', ' OWNER@EXAMPLE.COM '),
     ).resolves.toMatchObject({
@@ -89,7 +97,7 @@ describe('owner authentication', () => {
         findFirst: vi.fn().mockResolvedValue({ id: 'other' }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withActivity(prisma) as never, {} as never, {} as never);
     await expect(
       service.updateAccount('owner-id', 'used@example.com'),
     ).rejects.toBeInstanceOf(ConflictException);
@@ -111,7 +119,7 @@ describe('owner authentication', () => {
       },
     };
     const service = new AuthService(
-      prisma as never,
+      withActivity(prisma) as never,
       {} as never,
       { signAsync: vi.fn().mockResolvedValue('token') } as never,
     );
@@ -151,7 +159,7 @@ describe('owner authentication', () => {
         update: vi.fn(),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withActivity(prisma) as never, {} as never, {} as never);
     await expect(
       service.changePassword('owner', 'wrong-password', 'new-password'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -170,7 +178,7 @@ describe('owner authentication', () => {
         }),
       },
     };
-    const service = new AuthService(prisma as never, {} as never, {} as never);
+    const service = new AuthService(withActivity(prisma) as never, {} as never, {} as never);
     await service.changePassword('owner', 'correct-horse', 'new-password');
     expect(await compare('correct-horse', savedHash)).toBe(false);
     expect(await compare('new-password', savedHash)).toBe(true);

@@ -791,15 +791,11 @@ describe('atomic import receipt and secure original document archive', () => {
     });
     const receiving = confirm.confirm(f.id, actor, {});
     await atCopy;
-    const update = db.client.invoiceImportDraft.updateMany.bind(
-      db.client.invoiceImportDraft,
-    );
-    vi.spyOn(db.client.invoiceImportDraft, 'updateMany').mockImplementationOnce(
-      (args) => {
-        saving();
-        return update(args);
-      },
-    );
+    const transaction = db.client.$transaction.bind(db.client);
+    vi.spyOn(db.client, '$transaction').mockImplementationOnce((callback, options) => {
+      saving();
+      return transaction(callback, options);
+    });
     const edit = structuredClone(f.input);
     edit.containerNumber = 'UNSAVED-CONCURRENT-CONTAINER';
     const save = imports.updateReview(f.id, actor, edit);

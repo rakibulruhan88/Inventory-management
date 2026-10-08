@@ -17,3 +17,16 @@ export function saleLineAmount(rollsSold: number, unitPricePerRoll: number): num
   if (amount > MAX_CENTS) throw new Error('Line amount exceeds the supported limit.');
   return Number(amount) / 100;
 }
+
+/** Meter has two decimal places; round the product once to the nearest cent. */
+export function meterSaleLineAmount(meterSold: number, unitPricePerMeter: number): number {
+  const meterHundredths = saleMoneyCents(meterSold);
+  if (meterHundredths <= 0n || meterSold > 9999999999.99)
+    throw new Error('Enter positive Meter with at most two decimal places.');
+  const cents = saleMoneyCents(unitPricePerMeter);
+  if (cents <= 0n || unitPricePerMeter > 9999999999.99)
+    throw new Error('Enter a valid positive Unit Price / Meter.');
+  const amount = (meterHundredths * cents + 50n) / 100n;
+  if (amount > MAX_CENTS) throw new Error('Line amount exceeds the supported limit.');
+  return Number(amount) / 100;
+}

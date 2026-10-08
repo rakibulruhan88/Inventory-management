@@ -162,6 +162,8 @@ function memoryPrisma() {
   const prisma = {
     invoiceImportDraft,
     $executeRaw: vi.fn(),
+    $queryRaw: vi.fn(async (query: { values: unknown[] }) => rows.filter((row) => row.id === query.values[0])),
+    auditLog: { create: vi.fn(async () => ({ id: 'audit' })) },
     product: { ...writes, findMany: vi.fn(async () => [] as unknown[]) },
     supplier: {
       ...writes,
@@ -172,6 +174,7 @@ function memoryPrisma() {
       findUnique: vi.fn(async () => null as { id: string } | null),
     },
     user: {
+      findUnique: vi.fn(async () => ({ name: 'Owner', role: 'OWNER' })),
       findFirst: vi.fn(async () => ({ id: 'owner' }) as { id: string } | null),
     },
     purchase: writes,

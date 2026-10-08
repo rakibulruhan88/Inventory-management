@@ -1,3 +1,4 @@
+import { auditMutation, appendActivity } from '../activity/activity-write.js';
 import {
   BadRequestException,
   ConflictException,
@@ -133,6 +134,7 @@ export class InvoiceImportsService {
               expiresAt: new Date(Date.now() + settings.ttlMs),
             },
           });
+          await appendActivity(tx, { action: 'RECORD_CREATED', entityType: 'InvoiceImportDraft', entityId: id, actorId: userId, metadata: { label: draft.originalFileName, status: draft.status } });
           return {
             ...this.response(draft),
             duplicateFile: Boolean(otherOwnerDuplicate),
@@ -196,7 +198,7 @@ export class InvoiceImportsService {
           'TOTAL_LIMIT',
           'The parsed invoice totals exceed the supported limits.',
         );
-      await this.prisma.invoiceImportDraft.updateMany({
+      await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'InvoiceImportDraft', entityId: id, actorId: userId }, async (tx) => tx.invoiceImportDraft.updateMany({
         where: { id, status: 'PARSING' },
         data: {
           status: 'REVIEW',
@@ -212,13 +214,13 @@ export class InvoiceImportsService {
           parsedTotalRolls: review.parsedTotals.rolls,
           parsedTotalMeter: review.parsedTotals.meter,
         },
-      });
+      }));
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
-        await this.prisma.invoiceImportDraft.updateMany({
+        await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'InvoiceImportDraft', entityId: id, actorId: userId }, async (tx) => tx.invoiceImportDraft.updateMany({
           where: { id, status: 'PARSING' },
           data: { status: draft.status },
-        });
+        }));
         throw error;
       }
       const issue: InvoiceImportIssue =
@@ -229,7 +231,7 @@ export class InvoiceImportsService {
               message:
                 'Could not read this invoice. Try a clearer PDF, JPG, or PNG. No inventory was changed.',
             };
-      await this.prisma.invoiceImportDraft.updateMany({
+      await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'InvoiceImportDraft', entityId: id, actorId: userId }, async (tx) => tx.invoiceImportDraft.updateMany({
         where: { id, status: 'PARSING' },
         data: {
           status: 'FAILED',
@@ -237,7 +239,7 @@ export class InvoiceImportsService {
           reviewedData: Prisma.DbNull,
           parseErrors: json([issue]),
         },
-      });
+      }));
     }
     return this.get(id, userId);
   }
@@ -306,7 +308,7 @@ export class InvoiceImportsService {
     await this.matchExisting(review);
     review.validationPassed = blockingIssues(review, !reset).length === 0;
     // Compare-and-save prevents expiry, cleanup, parsing, or concurrent edits from being overwritten.
-    const saved = await this.prisma.invoiceImportDraft.updateMany({
+    const saved = await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'InvoiceImportDraft', entityId: id, actorId: userId }, async (tx) => tx.invoiceImportDraft.updateMany({
       where: {
         id,
         uploadedById: userId,
@@ -315,7 +317,7 @@ export class InvoiceImportsService {
         updatedAt: draft.updatedAt,
       },
       data: { reviewedData: json(review) },
-    });
+    }));
     if (!saved.count)
       throw new ConflictException(
         'This review changed or expired. Refresh it before saving again.',

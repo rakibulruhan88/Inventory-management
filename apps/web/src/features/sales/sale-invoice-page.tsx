@@ -80,7 +80,7 @@ export function InvoiceSheet({ invoice }: { invoice: SaleInvoice }) {
               "Color",
               "Rolls",
               "Meter",
-              "Unit Price / Roll",
+              invoice.lines.some((line) => line.mode === "BY_METER") ? "Unit Price" : "Unit Price / Roll",
               "Amount",
             ].map((label, i) => (
               <th key={label} scope="col" className={i > 2 ? "number" : ""}>
@@ -94,6 +94,7 @@ export function InvoiceSheet({ invoice }: { invoice: SaleInvoice }) {
             <tr key={line.id} className="invoice-row">
               <td className="item-code">
                 <strong>{line.itemCode}</strong>
+                <span className="block text-xs">Sell By: {line.mode === "BY_METER" ? "Meter" : "Roll"}</span>
               </td>
               <td className="item-description">
                 {line.description || line.itemName || "—"}
@@ -105,14 +106,17 @@ export function InvoiceSheet({ invoice }: { invoice: SaleInvoice }) {
               <td className="number item-meter" data-label="Meter">
                 {line.meterSold?.toLocaleString("en-BD") ?? "—"}
               </td>
-              <td className="number item-price" data-label="Unit Price / Roll">
+              <td className="number item-price" data-label={line.mode === "BY_METER" ? "Unit Price / Meter" : "Unit Price / Roll"}>
                 {documentMoney(
-                  line.unitPricePerRoll,
+                  line.mode === "BY_METER" ? line.unitPricePerMeter ?? null : line.unitPricePerRoll,
                   invoice.settings.currencySymbol,
                 )}
               </td>
               <td className="number item-amount" data-label="Amount">
                 <strong>{money(invoice, line.lineTotal)}</strong>
+                {line.mode === "BY_METER" && line.unitPricePerMeter != null && (
+                  <span className="block text-xs">{line.meterSold?.toLocaleString("en-BD")} Meter × {money(invoice, line.unitPricePerMeter)} = {money(invoice, line.lineTotal)}</span>
+                )}
               </td>
             </tr>
           ))}

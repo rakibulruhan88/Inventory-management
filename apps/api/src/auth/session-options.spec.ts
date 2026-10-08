@@ -61,11 +61,11 @@ describe('persistent device login', () => {
   });
   it('issues the persistent cookie at login and clears it at logout', async () => {
     const token = await jwt.signAsync(user);
-    const controller = new AuthController({ login: vi.fn().mockResolvedValue({ user, token }) } as never);
+    const controller = new AuthController({ recordSignOut: vi.fn().mockResolvedValue(undefined), login: vi.fn().mockResolvedValue({ user, token }) } as never);
     const response = { cookie: vi.fn(), clearCookie: vi.fn() };
     await expect(controller.login({ identifier: 'owner', password: 'valid-password' }, response as never)).resolves.toEqual({ user });
     expect(response.cookie).toHaveBeenCalledWith(SESSION_COOKIE, token, sessionCookieOptions());
-    expect(controller.logout(response as never)).toEqual({ signedOut: true });
+    await expect(controller.logout(response as never, user)).resolves.toEqual({ signedOut: true });
     expect(response.clearCookie).toHaveBeenCalledWith(SESSION_COOKIE, { path: '/' });
     const { context } = requestContext({});
     await expect(guard().canActivate(context as never)).rejects.toBeInstanceOf(UnauthorizedException);

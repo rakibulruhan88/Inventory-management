@@ -201,11 +201,15 @@ export type ReceivePurchaseResponse = {
   totalMeter: number;
   reusedItemCodes: string[];
 };
+export type SaleMode = "FULL_ROLL" | "BY_METER";
 export type CreateSaleLine = {
+  /** Omitted mode keeps the existing Roll flow. */
+  mode?: SaleMode;
   variantId: string;
   rollsSold: number;
   meterSold?: number;
-  unitPricePerRoll: number;
+  unitPricePerRoll?: number;
+  unitPricePerMeter?: number;
   /** Optional legacy client total is ignored; the API always calculates the amount. */
   lineTotal?: number;
 };
@@ -234,6 +238,8 @@ export type CreateSaleResponse = {
   emailRecipient?: string | null;
 };
 export type SaleInvoiceLine = {
+  mode?: SaleMode;
+  unitPricePerMeter?: number | null;
   id: string;
   itemCode: string;
   itemName: string | null;
@@ -492,7 +498,7 @@ export type CustomerPhoneConflict = {
   };
 };
 
-export { saleLineAmount, saleMoneyCents, MAX_SALE_AMOUNT } from "./sale-pricing.js";
+export { meterSaleLineAmount, saleLineAmount, saleMoneyCents, MAX_SALE_AMOUNT } from "./sale-pricing.js";
 
 export type PaymentReceiptAllocation = {
   saleId: string | null; invoiceNumber: string | null; soldAt: string;
@@ -536,3 +542,5 @@ export type ReceiptLedgerRow = Pick<PaymentReceipt, "id" | "receiptNumber" | "cu
 export type PaymentListQuery = { search?: string; page?: number; pageSize?: number };
 
 export * from './finance.js';
+
+export * from './activity.js';

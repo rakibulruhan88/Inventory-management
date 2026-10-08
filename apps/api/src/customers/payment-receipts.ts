@@ -1,3 +1,4 @@
+import { appendActivity } from '../activity/activity-write.js';
 import { readDueSources, presentDueSource } from './account-balances.js';
 import { createHash } from 'node:crypto';
 import {
@@ -241,16 +242,17 @@ export async function receivePayment(
               data: { receiptId: receipt.id, ...allocation },
             });
           }
-          await tx.auditLog.create({
-            data: {
+          await appendActivity(tx, {
               action: 'CUSTOMER_PAYMENT_RECEIVED',
               entityType: 'CustomerPaymentReceipt',
               entityId: receipt.id,
-              userId: actorId,
+              actorId: actorId,
               reason: notes,
               metadata: {
                 customerId,
                 receiptId: receipt.id,
+                reference: receipt.receiptNumber,
+                label: customer.name,
                 totalAmount: plan.amount.toFixed(2),
                 saleIds: plan.allocations.flatMap((a) =>
                   a.saleId ? [a.saleId] : [],
@@ -262,8 +264,7 @@ export async function receivePayment(
                 timestamp: new Date().toISOString(),
                 paidAt: paidAt.toISOString(),
               },
-            },
-          });
+            });
           return receiptDetails(tx, customerId, receipt.id);
         },
         { isolationLevel: 'ReadCommitted', maxWait: 10000, timeout: 20000 },

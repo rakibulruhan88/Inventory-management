@@ -1,3 +1,4 @@
+import { auditMutation, appendActivity } from '../activity/activity-write.js';
 import {
   ConflictException,
   Inject,
@@ -52,9 +53,14 @@ export class AuthService implements OnModuleInit {
       email: user.email,
       role: user.role,
     };
-    return { user: payload, token: await this.jwt.signAsync(payload) };
+    const token = await this.jwt.signAsync(payload);
+    await this.prisma.$transaction((tx) => appendActivity(tx, { action: 'SIGNED_IN', entityType: 'User', entityId: user.id, actorId: user.id, metadata: { label: user.name } }));
+    return { user: payload, token };
   }
 
+  async recordSignOut(userId: string) {
+    await this.prisma.$transaction((tx) => appendActivity(tx, { action: 'SIGNED_OUT', entityType: 'User', entityId: userId, actorId: userId }));
+  }
   async account(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -79,11 +85,13 @@ export class AuthService implements OnModuleInit {
           'That email is already used by another account.',
         );
     }
-    return this.prisma.user.update({
+    return auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'User', entityId: userId, actorId: userId }, async (tx) => {
+    return tx.user.update({
       where: { id: userId },
       data: { email: normalizedEmail },
       select: { name: true, username: true, email: true },
-    });
+    })
+    });;
   }
 
   async changePassword(
@@ -94,10 +102,13 @@ export class AuthService implements OnModuleInit {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !(await compare(currentPassword, user.passwordHash)))
       throw new UnauthorizedException('Current password is incorrect.');
-    await this.prisma.user.update({
+    await auditMutation(this.prisma, { action: 'PASSWORD_CHANGED', entityType: 'User', entityId: userId, actorId: userId }, async (tx) => {
+    await tx.user.update({
       where: { id: userId },
       data: { passwordHash: await hash(newPassword, 12) },
-    });
+    })
+      return { passwordChanged: true };
+    });;
     return { passwordChanged: true as const };
   }
 }

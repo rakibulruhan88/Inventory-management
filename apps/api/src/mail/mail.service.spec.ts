@@ -27,7 +27,8 @@ describe('invoice email', () => {
       ({ MAIL_HOST: 'smtp.example.com', MAIL_USER: 'user', MAIL_APP_PASSWORD: 'pass', MAIL_FROM_EMAIL: 'shop@example.com' })[key] ?? fallback,
     ),
   };
-  const prisma = { invoiceEmailLog: { create: vi.fn().mockResolvedValue({}) } };
+  const tx = { invoiceEmailLog: { create: vi.fn().mockResolvedValue({}) }, auditLog: { create: vi.fn().mockResolvedValue({ id: 'audit' }) } };
+  const prisma = { ...tx, $transaction: vi.fn((fn: (client: typeof tx) => Promise<unknown>) => fn(tx)) };
 
   beforeEach(() => vi.clearAllMocks());
 

@@ -1,3 +1,4 @@
+import { auditMutation, appendActivity, safeSnapshot } from '../activity/activity-write.js';
 import { createOpeningDue } from './opening-due.js';
 import type {
   OpeningDueRequest,
@@ -199,18 +200,19 @@ export class CustomersService {
       { isolationLevel: 'RepeatableRead' },
     );
   }
-  async create(input: CustomerInput) {
-    return this.write(undefined, input);
+  async create(input: CustomerInput, actorId?: string) {
+    return this.write(undefined, input, actorId);
   }
-  async update(id: string, input: CustomerInput) {
-    return this.write(id, input);
+  async update(id: string, input: CustomerInput, actorId?: string) {
+    return this.write(id, input, actorId);
   }
-  private async write(id: string | undefined, input: CustomerInput) {
+  private async write(id: string | undefined, input: CustomerInput, actorId?: string) {
     const data = { ...customerIdentityInput(input), archivedAt: null };
     await assertCustomerPhoneAvailable(this.prisma, data.normalizedPhone, id);
     try {
+      return await auditMutation(this.prisma, { action: id ? 'RECORD_UPDATED' : 'RECORD_CREATED', entityType: 'Customer', entityId: id, actorId }, async (tx) => {
       if (!id)
-        return await this.prisma.customer.create({
+        return await tx.customer.create({
           data,
           select: {
             id: true,
@@ -220,7 +222,7 @@ export class CustomersService {
             address: true,
           },
         });
-      const result = await this.prisma.customer.updateMany({
+      const result = await tx.customer.updateMany({
         where: { id, archivedAt: null },
         data,
       });
@@ -232,6 +234,7 @@ export class CustomersService {
         email: data.email,
         address: data.address,
       };
+      });
     } catch (error) {
       if (isCustomerPhoneUniqueError(error) && data.normalizedPhone) {
         const owner = await this.prisma.customer.findUnique({
@@ -268,7 +271,7 @@ export class CustomersService {
   receivePayment(id: string, input: ReceivePaymentRequest, actorId: string) {
     return receivePayment(this.prisma, id, input, actorId);
   }
-  async archive(id: string) {
+  async archive(id: string, actorId?: string) {
     return this.prisma.$transaction(
       async (tx) => {
         await lockCustomerAccount(tx, id);
@@ -286,6 +289,7 @@ export class CustomersService {
           where: { id },
           data: { archivedAt: new Date() },
         });
+        await appendActivity(tx, { action: 'RECORD_ARCHIVED', entityType: 'Customer', entityId: id, actorId, metadata: { label: customer.name, before: safeSnapshot('Customer', customer), after: safeSnapshot('Customer', { ...customer, archivedAt: new Date() }) } });
         return { id, archived: true };
       },
       { isolationLevel: 'ReadCommitted' },

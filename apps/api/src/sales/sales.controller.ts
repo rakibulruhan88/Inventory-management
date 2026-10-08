@@ -56,8 +56,8 @@ export class SalesController {
   })) input: CreateSaleDto, @CurrentUser() user: AuthUser) {
     return this.sales.create(input, user.id);
   }
-  @Post(':id/email') email(@Param('id') id: string) {
-    return this.sales.emailInvoice(id);
+  @Post(':id/email') email(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.sales.emailInvoice(id, user.id);
   }
   @Post(':id/void') void(
     @Param('id') id: string,

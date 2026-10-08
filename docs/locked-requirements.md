@@ -3,9 +3,9 @@
 ## Product language
 
 - The business UI uses **Rolls** and **Meter**, never “Quantity”.
-- Products are purchased and sold by **Roll** only. Every sale line sells at least one Roll.
-- Meter is optional tracking information. A sale with Meter deducts both Rolls and Meter; a blank Meter deducts only Rolls.
-- When a variant reaches zero remaining Rolls, its remaining Meter is normalized to zero.
+- Products are purchased by **Roll**. Sales default to **Roll**, with an additive **Meter** mode per row. Roll rows sell at least one integer Roll; Meter rows sell zero Rolls and positive Meter.
+- In Roll mode, Meter is optional tracking information. A Roll sale with Meter deducts both Rolls and Meter; a blank Meter deducts only Rolls. Meter mode requires positive Meter and deducts no Rolls.
+- Roll-only sales retain zero-Roll Meter normalization. When a variant has a Meter sale row, preserve its unused Meter, including at zero Rolls. Zero Rolls with positive Meter is sellable stock.
 - Main inventory aggregates Rolls and optional Meter while preserving batch and container history.
 
 ## Product identity and stock history
@@ -47,8 +47,8 @@
 ## New Sale entry and pricing
 
 - An item stays in one frontend group; its textual color may repeat across intentional sale rows. Repeated rows are never merged.
-- New rows store Unit Price / Roll and backend-calculated `lineTotal = rollsSold × unitPricePerRoll`, using integer cents/Decimal. Meter never sets price. Unit prices remain positive, with at most two decimal places.
-- Stock validation aggregates all rows by ProductVariant before oldest-batch allocation. Zero-Roll Meter normalization happens after the variant's rows have allocated; sale void reverses all deduction/normalization movements.
+- Roll rows store Unit Price / Roll and backend-calculated `lineTotal = rollsSold × unitPricePerRoll`, using integer cents/Decimal. Meter remains optional tracking in Roll mode. Meter rows reuse `SaleMode.BY_METER` and `ratePerMeter`, with `lineTotal = meterSold × ratePerMeter`, rounded once to the nearest cent. Unit prices and Meter have at most two decimal places. Meter rows deduct only Meter; Roll rows retain existing stock semantics. Historical pricing is never inferred.
+- Stock validation aggregates all rows by ProductVariant before oldest-batch allocation. For Roll-only variants, zero-Roll Meter normalization happens after the variant's rows have allocated; sale void reverses all deduction/normalization movements.
 - Historical manual-amount SaleLines retain their existing totals with null unit price; never infer historical prices. Discount, received/paid/due/change, customer relations and invoice numbering retain their existing rules.
 
 ## Customer payments and due allocation
@@ -65,7 +65,7 @@
 - Receipt and allocation balances are posting-time snapshots. Payment Date is editable and defaults to the current Asia/Dhaka business date; a backdated date does not reconstruct or rewrite historical invoice balances.
 - Receipt writes include `CUSTOMER_PAYMENT_RECEIVED` in AuditLog with actor, customer, receipt, amount, affected Sales, Opening Due IDs and payment time. Creation time is preserved by AuditLog itself.
 - Sales with any receipt allocation history cannot be voided. Existing legacy-only Sale void still reverses its payments and stock. Receipt deletion/reversal is unsupported; a dedicated safe payment reversal feature is future work.
-- Printable invoice redesign, printable receipts, global Activity and customer credit are outside this feature.
+- Printable invoice redesign, printable receipts and customer credit are outside this feature.
 
 ## Opening Due and global Payments
 
@@ -75,12 +75,12 @@
 - New customer plus Opening Due is one atomic, audited, idempotent event. Staff then continue to the existing Receive Payment form, where the payment is a separate atomic event. Existing customers can use “Add Old Due.”
 - Opening Due remaining is originalAmount minus receipt allocations; there is no separately editable paid amount or customer balance. Account summary shows original Opening Due, Sales, Payments Received and Total Due. The opening history remains visible after full payment.
 - Exactly one of saleId/openingBalanceId is required on each receipt allocation; source ownership must match the receipt customer. A database check and ownership/overpayment trigger protect writes. One receipt may pay both sources; Sale Detail includes only its own applied amount.
-- Opening creation records `CUSTOMER_OPENING_BALANCE_CREATED` with actor, customer, opening ID, amount, Balance Date and creation timestamp. Receipt audit metadata identifies opening IDs and sale IDs. No Activity UI is added.
+- Opening creation records `CUSTOMER_OPENING_BALANCE_CREATED` with actor, customer, opening ID, amount, Balance Date and creation timestamp. Receipt audit metadata identifies opening IDs and sale IDs. Opening Due events appear in the owner-only Activity history.
 - All account writers use the customer lock. Opening creation also serializes exact submission keys before new identity creation. Payment balances are reread inside the transaction; stale previews, duplicate keys with changed payloads and overpayment are rejected. Exact retries return the existing event.
 - Opening Due remaining is included in new Sale previousOutstandingBeforeSale, before inserting the new Sale. Legacy snapshots remain untouched. Receiving old due is Money In but is not a new Sale; future Financial Ledger/Cashbook must retain this distinction.
 - `/payments/outstanding-customers` and `/payments/receipts` require the existing session guard, validate bounded server pagination/search, use stable ordering and avoid per-row database reads. Due customers include opening-only, sale-only and mixed customers. Receipts contain one row per existing customer receipt; legacy/at-sale Payments stay in Customer History without fabricated receipt identities.
 - Added/changed staff UI uses simple English: Total Due, Previous Due, Opening Due, Balance Date, Pay Now, Due After Payment, Receive Payment, Payment History, Pay Against, Paid Against, Pay Old Due First, Choose Invoices. Internal accounting terms belong in developer documentation.
-- No Cashbook, printable invoice/receipt redesign, Activity page, advance/credit, dependency upgrade or broad refactor is included.
+- No Cashbook, printable invoice/receipt redesign, advance/credit, dependency upgrade or broad refactor is included.
 
 ## Cashbook / Financial Summary foundation
 
@@ -98,4 +98,16 @@
 - New manual entries and customer due receipts combine the selected business date with the current Asia/Dhaka clock time at submission. Exact timestamps are retained for idempotent retries; historical timestamps are not rewritten. Cashbook displays Bangladesh date and time for every source.
 - Staff UI uses short, simple English and ৳. Main Cashbook shows all records; Money In, Expenses, Supplier Payments and Other Money Out have separate lists, entry pages and document detail pages. No financial-entry popup. Mobile shows compact totals and stacked records; detailed filters/breakdowns are expandable.
 - Sale Invoice, Customer Payment Receipt, Money In Receipt, Expense Voucher, Supplier Payment and Payment Voucher have distinct document layouts. Only existing invoice/receipt numbers are shown; manual documents show their real Entry ID without fabricated invoice numbering. Printing and browser Save as PDF use the same document. Downloaded/emailed sale PDFs include per-Roll prices, stored due snapshots, sale-time/later payments, Dhaka dates and an embedded OFL font for ৳.
-- Full accounting, supplier payable calculation, customer credit, payment reversal and global Activity remain outside this foundation.
+- Full accounting, supplier payable calculation, customer credit and payment reversal remain outside this foundation.
+
+
+## Owner Activity history
+
+- Activity is available only to a signed-in, active Owner. The API rechecks the current database role for every Activity list, details and filter-options request; a stale session role never grants access. Staff navigation hides Activity.
+- Activity reads the existing AuditLog and preserves all historical records. Missing historical actors or change snapshots stay unknown; never create past events from guesses. Names/references may use current records only as a fallback when an old log has no snapshot.
+- Track completed sales and voids, purchase receipts and reversals, stock adjustments, customer payments, Opening Due, Cashbook entries and voids, contact/item/container edits and archives, settings and account changes, sign-in/sign-out, password changes, invoice email delivery and invoice import upload/review/confirmation.
+- New edits save explicit before/after fields and the actor's display name in the same database transaction as the change. Rolled-back changes do not create successful activity. Existing receipt/entry idempotency remains authoritative; exact retries do not duplicate their posting events.
+- Never save passwords, hashes, tokens, cookies, upload content, parser text or image data in activity. Brand images use fingerprints to detect a replacement without retaining the file or URL. Activity details expose only named safe fields, never raw metadata JSON.
+- Owner can search and filter by category, action, person and complete Bangladesh date ranges. Stable server pagination and full-filter summaries share one read snapshot. Details show saved changes, note/reason, time, actor and a link to the real record where available.
+- Desktop uses a ledger with a details panel; mobile uses stacked events and a details drawer. Auto refresh runs while the page is active and can be turned off. This tracks saved work and account events; it does not record page views or keystrokes.
+- Activity has no edit/delete endpoints. The forward migration only adds AuditAction enum values; it never resets, seeds or rewrites historical data. Existing stock, sale, purchase, customer identity, due and payment calculations remain unchanged.

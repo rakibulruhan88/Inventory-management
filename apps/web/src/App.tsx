@@ -52,6 +52,7 @@ const ReportsPage = lazy(() =>
   })),
 );
 const CustomerCreatePage = lazy(() => import("@/features/payments/opening-due-page").then(m => ({ default: m.CustomerCreatePage })));
+const ActivityPage = lazy(() => import("@/features/activity/activity-page").then(m => ({ default: m.ActivityPage })));
 const CustomersPage = lazy(() =>
   import("@/features/records/records-pages").then((m) => ({
     default: m.CustomersPage,
@@ -254,6 +255,7 @@ export default function App() {
                   <Route path="/containers" element={<ContainersPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/activity" element={<ActivityPage />} />
                   <Route
                     path="*"
                     element={<Navigate to="/dashboard" replace />}

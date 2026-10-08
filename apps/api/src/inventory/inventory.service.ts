@@ -1,3 +1,4 @@
+import { auditMutation, appendActivity } from '../activity/activity-write.js';
 import { accountSourcesSql } from '../customers/account-balances.js';
 import { Prisma } from '../generated/prisma/client.js';
 import {
@@ -152,12 +153,12 @@ export class InventoryService {
     });
   }
 
-  async updateProduct(id: string, input: UpdateProductRequest) {
+  async updateProduct(id: string, input: UpdateProductRequest, actorId?: string) {
     try {
       const itemCode = normalizeText(input.itemCode);
       if (!itemCode) throw new BadRequestException('Item code is required.');
       const name = normalizeText(input.name) || null;
-      return await this.prisma.product.update({
+      return await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'Product', entityId: id, actorId }, async (tx) => tx.product.update({
         where: { id, archivedAt: null },
         data: {
           itemCode,
@@ -169,12 +170,12 @@ export class InventoryService {
           searchText: [itemCode, name].filter(Boolean).join(' '),
         },
         select: { id: true, itemCode: true, name: true, description: true },
-      });
+      }));
     } catch (error) {
       this.handle(error, 'Item not found.');
     }
   }
-  async archiveProduct(id: string) {
+  async archiveProduct(id: string, actorId?: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, archivedAt: null },
       include: { variants: { include: { batches: true } } },
@@ -191,16 +192,17 @@ export class InventoryService {
         `This item still has ${rolls} Rolls and ${meter.toLocaleString()} Meter in stock. It cannot be archived.`,
       );
     const archivedAt = new Date();
-    await this.prisma.$transaction([
-      this.prisma.product.update({ where: { id }, data: { archivedAt } }),
-      this.prisma.productVariant.updateMany({
+    await auditMutation(this.prisma, { action: 'RECORD_ARCHIVED', entityType: 'Product', entityId: id, actorId }, async (tx) => {
+      await tx.product.update({ where: { id }, data: { archivedAt } });
+      await tx.productVariant.updateMany({
         where: { productId: id },
         data: { archivedAt },
-      }),
-    ]);
+      });
+      return { id, archived: true };
+    });
     return { id, archived: true };
   }
-  async updateVariant(id: string, input: UpdateVariantRequest) {
+  async updateVariant(id: string, input: UpdateVariantRequest, actorId?: string) {
     const color = normalizeText(input.color);
     if (!color) throw new BadRequestException('Color Code is required.');
     const variant = await this.prisma.productVariant.findFirst({
@@ -223,7 +225,7 @@ export class InventoryService {
         'This supplier Color Code already exists for this item.',
       );
     try {
-      return await this.prisma.productVariant.update({
+      return await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'ProductVariant', entityId: id, actorId }, async (tx) => tx.productVariant.update({
         where: { id },
         data: {
           color,
@@ -233,12 +235,12 @@ export class InventoryService {
             .join(' '),
         },
         select: { id: true, color: true },
-      });
+      }));
     } catch (error) {
       this.handle(error, 'Color variant not found.');
     }
   }
-  async archiveVariant(id: string) {
+  async archiveVariant(id: string, actorId?: string) {
     const variant = await this.prisma.productVariant.findFirst({
       where: { id, archivedAt: null },
       include: { batches: true },
@@ -253,10 +255,10 @@ export class InventoryService {
       throw new ConflictException(
         `This color still has ${rolls} Rolls and ${meter.toLocaleString()} Meter in stock. It cannot be archived.`,
       );
-    await this.prisma.productVariant.update({
+    await auditMutation(this.prisma, { action: 'RECORD_ARCHIVED', entityType: 'ProductVariant', entityId: id, actorId }, async (tx) => tx.productVariant.update({
       where: { id },
       data: { archivedAt: new Date() },
-    });
+    }));
     return { id, archived: true };
   }
   async adjustStock(
@@ -342,15 +344,14 @@ export class InventoryService {
         meterLeft = Number((meterLeft - plannedMeterDelta).toFixed(2));
         actualMeter = Number((actualMeter + actualMeterDelta).toFixed(2));
       }
-      await tx.auditLog.create({
-        data: {
+      await appendActivity(tx, {
           action: 'STOCK_ADJUSTED',
+          metadata: { rollsChange, meterChange, rolls: resultingRolls, meter: actualMeter, stockBefore: { rolls: currentRolls, meter: currentMeter }, stockAfter: { rolls: resultingRolls, meter: actualMeter } },
           entityType: 'ProductVariant',
           entityId: variantId,
           reason: cleanReason,
-          userId: actorId,
-        },
-      });
+          actorId: actorId,
+        });
       return { variantId, rolls: resultingRolls, meter: actualMeter };
     });
   }

@@ -1,3 +1,4 @@
+import { appendActivity } from '../activity/activity-write.js';
 import { createHash } from 'node:crypto';
 import {
   BadRequestException,
@@ -189,12 +190,11 @@ export class FinanceService {
             },
             include,
           });
-          await tx.auditLog.create({
-            data: {
+          await appendActivity(tx, {
               action: 'FINANCIAL_ENTRY_CREATED',
               entityType: 'FinancialEntry',
               entityId: e.id,
-              userId: actorId,
+              actorId: actorId,
               metadata: {
                 actorId,
                 entryId: e.id,
@@ -203,8 +203,7 @@ export class FinanceService {
                 supplierId: e.supplierId,
                 occurredAt: e.occurredAt.toISOString(),
               },
-            },
-          });
+            });
           return present(e);
         },
         { isolationLevel: 'ReadCommitted', maxWait: 10000, timeout: 20000 },
@@ -235,12 +234,11 @@ export class FinanceService {
           where: { id },
           include,
         });
-        await tx.auditLog.create({
-          data: {
+        await appendActivity(tx, {
             action: 'FINANCIAL_ENTRY_VOIDED',
             entityType: 'FinancialEntry',
             entityId: id,
-            userId: actorId,
+            actorId: actorId,
             reason: clean,
             metadata: {
               actorId,
@@ -250,8 +248,7 @@ export class FinanceService {
               supplierId: e.supplierId,
               occurredAt: e.occurredAt.toISOString(),
             },
-          },
-        });
+          });
         return present(e);
       });
     } catch (e) {

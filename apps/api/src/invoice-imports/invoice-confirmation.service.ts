@@ -1,3 +1,4 @@
+import { appendActivity } from '../activity/activity-write.js';
 import {
   BadRequestException,
   ConflictException,
@@ -255,6 +256,7 @@ export class InvoiceConfirmationService {
               ) as Prisma.InputJsonValue,
             },
           });
+          await appendActivity(tx, { action: 'RECORD_UPDATED', entityType: 'InvoiceImportDraft', entityId: id, actorId: userId, metadata: { label: draft.originalFileName, reference: received.purchaseNumber, status: 'CONFIRMED', confirmedPurchaseId: received.id } });
           return this.confirmedResult(tx, received.id, false);
         },
         { timeout: 60_000, maxWait: 10_000 },

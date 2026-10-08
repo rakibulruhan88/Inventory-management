@@ -432,3 +432,15 @@ export function createFinanceEntry(input: import('@afia/contracts').CreateFinanc
 }
 export function getFinanceEntry(id:string) { return apiRequest<import('@afia/contracts').FinanceEntryDetail>(`/finance/entries/${encodeURIComponent(id)}`); }
 export function voidFinanceEntry(id:string,reason:string) { return apiRequest<import('@afia/contracts').FinanceEntryDetail>(`/finance/entries/${encodeURIComponent(id)}/void`,{method:'POST',headers:{'X-Afia-Finance':'1'},body:JSON.stringify({reason})}); }
+
+export function getActivity(query: import('@afia/contracts').ActivityQuery) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)); });
+  return apiRequest<import('@afia/contracts').ActivityPage>(`/activity?${params}`);
+}
+export function getActivityDetail(id: string) {
+  return apiRequest<import('@afia/contracts').ActivityDetail>(`/activity/${encodeURIComponent(id)}`);
+}
+export function getActivityOptions() {
+  return apiRequest<import('@afia/contracts').ActivityOptions>('/activity/options');
+}

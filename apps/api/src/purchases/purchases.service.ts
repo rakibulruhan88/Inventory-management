@@ -1,3 +1,4 @@
+import { appendActivity, safeSnapshot } from '../activity/activity-write.js';
 import {
   BadRequestException,
   ConflictException,
@@ -209,6 +210,7 @@ export class PurchasesService {
               .join(' '),
           },
         });
+        if (Object.keys(missing).length) await appendActivity(tx, { action: 'RECORD_UPDATED', entityType: 'Supplier', entityId: supplier.id, actorId, metadata: { label: supplier.name, before: safeSnapshot('Supplier', match), after: safeSnapshot('Supplier', supplier) } });
       } else {
         supplier = await tx.supplier.create({
           data: {
@@ -221,6 +223,7 @@ export class PurchasesService {
               .join(' '),
           },
         });
+        await appendActivity(tx, { action: 'RECORD_CREATED', entityType: 'Supplier', entityId: supplier.id, actorId, metadata: { label: supplier.name, after: safeSnapshot('Supplier', supplier) } });
       }
     } else {
       const existing = await tx.supplier.findFirst({
@@ -247,6 +250,7 @@ export class PurchasesService {
         searchText: normalizedContainerNumber,
       },
     });
+    await appendActivity(tx, { action: 'RECORD_CREATED', entityType: 'Container', entityId: container.id, actorId, metadata: { label: container.containerNumber, reference: container.containerNumber, after: safeSnapshot('Container', container) } });
     const purchase = await tx.purchase.create({
       data: {
         purchaseNumber,
@@ -294,6 +298,7 @@ export class PurchasesService {
         },
         update: { archivedAt: null },
       });
+      if (!existing || existing.archivedAt) await appendActivity(tx, { action: existing ? 'RECORD_UPDATED' : 'RECORD_CREATED', entityType: 'Product', entityId: product.id, actorId, metadata: { label: product.itemCode, reference: product.itemCode, before: existing ? safeSnapshot('Product', existing) : null, after: safeSnapshot('Product', product) } });
       const seenColors = new Set<string>();
       for (const colorInput of item.colors) {
         index++;
@@ -334,6 +339,7 @@ export class PurchasesService {
                   searchText: [normalizedItemCode, color].join(' '),
                 },
               });
+        if (!matches.length || matches[0].archivedAt) await appendActivity(tx, { action: matches.length ? 'RECORD_UPDATED' : 'RECORD_CREATED', entityType: 'ProductVariant', entityId: variant.id, actorId, metadata: { label: variant.color, reference: product.itemCode, before: matches.length ? safeSnapshot('ProductVariant', matches[0]) : null, after: safeSnapshot('ProductVariant', variant) } });
         const batch = await tx.inventoryBatch.create({
           data: {
             batchCode: `${normalizedContainerNumber}-${String(index).padStart(2, '0')}`,
@@ -367,14 +373,13 @@ export class PurchasesService {
         });
       }
     }
-    await tx.auditLog.create({
-      data: {
+    await appendActivity(tx, {
         action: 'PURCHASE_RECEIVED',
+        metadata: { reference: purchaseNumber, label: container.containerNumber, totalRolls, totalMeter: Number(totalMeter.toFixed(2)), purchaseRows: input.items.flatMap((item) => item.colors.map((color) => ({ itemCode: item.itemCode, color: color.color, rolls: color.rolls, meter: color.totalMeter ?? 0 }))) },
         entityType: 'Purchase',
         entityId: purchase.id,
-        userId: actorId,
-      },
-    });
+        actorId: actorId,
+      });
     return {
       id: purchase.id,
       purchaseNumber,
@@ -438,15 +443,14 @@ export class PurchasesService {
         where: { id: purchase.containerId },
         data: { status: 'CLOSED', archivedAt: new Date() },
       });
-      await tx.auditLog.create({
-        data: {
+      await appendActivity(tx, {
           action: 'PURCHASE_REVERSED',
+          metadata: { reference: purchase.purchaseNumber },
           entityType: 'Purchase',
           entityId: id,
           reason: cleanReason,
-          userId: actorId,
-        },
-      });
+          actorId: actorId,
+        });
       return { id, reversed: true };
     });
   }

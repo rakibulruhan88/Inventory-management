@@ -1,3 +1,4 @@
+import { auditMutation } from '../activity/activity-write.js';
 import {
   ConflictException,
   Inject,
@@ -79,9 +80,9 @@ export class ContainersService {
         ) ?? [],
     }));
   }
-  async update(id: string, input: ContainerUpdateInput) {
+  async update(id: string, input: ContainerUpdateInput, actorId?: string) {
     try {
-      return await this.prisma.container.update({
+      return await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'Container', entityId: id, actorId }, async (tx) => tx.container.update({
         where: { id, archivedAt: null },
         data: {
           containerNumber: normalizeText(input.containerNumber),
@@ -90,7 +91,7 @@ export class ContainersService {
           searchText: normalizeCode(input.containerNumber),
         },
         select: { id: true, containerNumber: true, notes: true },
-      });
+      }));
     } catch (error) {
       if (
         typeof error === 'object' &&
@@ -109,7 +110,7 @@ export class ContainersService {
       throw error;
     }
   }
-  async archive(id: string) {
+  async archive(id: string, actorId?: string) {
     const container = await this.prisma.container.findFirst({
       where: { id, archivedAt: null },
       include: { batches: true },
@@ -124,10 +125,10 @@ export class ContainersService {
       throw new ConflictException(
         `This container still has ${rolls} Rolls and ${meter.toLocaleString()} Meter in stock. It cannot be archived.`,
       );
-    await this.prisma.container.update({
+    await auditMutation(this.prisma, { action: 'RECORD_ARCHIVED', entityType: 'Container', entityId: id, actorId }, async (tx) => tx.container.update({
       where: { id },
       data: { archivedAt: new Date() },
-    });
+    }));
     return { id, archived: true };
   }
 }

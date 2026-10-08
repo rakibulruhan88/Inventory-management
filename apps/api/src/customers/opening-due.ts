@@ -1,3 +1,4 @@
+import { appendActivity, safeSnapshot } from '../activity/activity-write.js';
 import { createHash } from 'node:crypto';
 import {
   BadRequestException,
@@ -88,6 +89,7 @@ export async function createOpeningDue(
           if (!id && identity) {
             await assertCustomerPhoneAvailable(tx, identity.normalizedPhone);
             const customer = await tx.customer.create({ data: identity });
+            await appendActivity(tx, { action: 'RECORD_CREATED', entityType: 'Customer', entityId: customer.id, actorId, metadata: { label: customer.name, after: safeSnapshot('Customer', customer) } });
             id = customer.id;
           }
           if (!id) throw new BadRequestException('Choose a customer.');
@@ -124,23 +126,22 @@ export async function createOpeningDue(
               requestHash: hash,
             },
           });
-          await tx.auditLog.create({
-            data: {
+          await appendActivity(tx, {
               action: 'CUSTOMER_OPENING_BALANCE_CREATED',
               entityType: 'CustomerOpeningBalance',
               entityId: opening.id,
-              userId: actorId,
+              actorId: actorId,
               reason: note,
               metadata: {
                 actorId,
                 customerId: id,
                 openingBalanceId: opening.id,
+                label: customer.name,
                 amount: amount.toFixed(2),
                 balanceAsOf: input.balanceAsOf,
                 timestamp: opening.createdAt.toISOString(),
               },
-            },
-          });
+            });
           return {
             customerId: id,
             openingDue: (await readOpeningDue(tx, id))!,

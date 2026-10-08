@@ -1,3 +1,4 @@
+import { appendActivity, safeSnapshot } from '../activity/activity-write.js';
 import { ConflictException } from '@nestjs/common';
 import type { InlinePartyInput } from '@afia/contracts';
 import type { Prisma } from '../generated/prisma/client.js';
@@ -12,6 +13,7 @@ export async function resolveSaleCustomer(
   tx: Prisma.TransactionClient,
   input: InlinePartyInput,
   customerId?: string,
+  actorId?: string,
 ) {
   const id = customerId ?? input.id;
   let existing = id
@@ -37,7 +39,11 @@ export async function resolveSaleCustomer(
       where: { normalizedPhone: data.normalizedPhone },
     });
   if (existing?.archivedAt) throw phoneConflict(existing);
-  if (!existing) return tx.customer.create({ data });
+  if (!existing) {
+    const created = await tx.customer.create({ data });
+    await appendActivity(tx, { action: 'RECORD_CREATED', entityType: 'Customer', entityId: created.id, actorId, metadata: { label: created.name, after: safeSnapshot('Customer', created) } });
+    return created;
+  }
   // Preserve existing contacts and historical invoice snapshots; fill missing fields only.
   const missing = {
     ...(!existing.phone && data.phone
@@ -48,7 +54,7 @@ export async function resolveSaleCustomer(
   };
   if ('normalizedPhone' in missing)
     await assertCustomerPhoneAvailable(tx, data.normalizedPhone, existing.id);
-  return tx.customer.update({
+  const updated = await tx.customer.update({
     where: { id: existing.id },
     data: {
       ...missing,
@@ -62,4 +68,7 @@ export async function resolveSaleCustomer(
         .join(' '),
     },
   });
+  if (Object.keys(missing).length) await appendActivity(tx, { action: 'RECORD_UPDATED', entityType: 'Customer', entityId: existing.id, actorId, metadata: { label: updated.name, before: safeSnapshot('Customer', existing), after: safeSnapshot('Customer', updated) } });
+  return updated;
+
 }

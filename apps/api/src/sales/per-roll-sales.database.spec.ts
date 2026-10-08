@@ -40,6 +40,7 @@ describe('per-roll pricing and repeated color stock PostgreSQL regression', () =
     'StockMovement',
     'InvoiceEmailLog',
     'AuditLog',
+    'User',
   ];
   beforeAll(async () => {
     await admin.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
@@ -168,6 +169,85 @@ describe('per-roll pricing and repeated color stock PostgreSQL regression', () =
     });
     return { rolls: _sum.availableRolls, meter: Number(_sum.availableMeter) };
   };
+  const meterRow = (meterSold = 50, unitPricePerMeter = 120): CreateSaleDto['lines'][number] => ({
+    variantId, mode: 'BY_METER', rollsSold: 0, meterSold, unitPricePerMeter,
+  });
+  it('sells 50 Meter from zero Rolls and 200 Meter, preserves invoice basis and void restores stock', async () => {
+    await client.inventoryBatch.deleteMany();
+    const original = await batch(0, 200);
+    const result = await sales.create(input([{ ...meterRow(), lineTotal: 1 }]));
+    expect(result.subtotal).toBe(6000);
+    expect(await stock()).toEqual({ rolls: 0, meter: 150 });
+    expect((await sales.details(result.id)).lines[0]).toMatchObject({
+      mode: 'BY_METER', rollsSold: 0, meterSold: 50,
+      unitPricePerMeter: 120, unitPricePerRoll: null, lineTotal: 6000,
+    });
+    expect(await client.saleBatchAllocation.findFirst()).toMatchObject({
+      batchId: original.id, rollsSold: 0, meterSold: expect.anything(), rollsBefore: 0, rollsAfter: 0,
+    });
+    const movement = await client.stockMovement.findFirstOrThrow({ where: { reference: result.invoiceNumber } });
+    expect(movement.rollsChange).toBe(0);
+    expect(Number(movement.meterChange)).toBe(-50);
+    await sales.void(result.id, 'Undo Meter sale');
+    expect(await stock()).toEqual({ rolls: 0, meter: 200 });
+  });
+  it.each([ [201], [100, 101] ])('blocks aggregated Meter oversell: %j', async (...meters) => {
+    await client.inventoryBatch.deleteMany();
+    await batch(0, 200);
+    await expect(sales.create(input(meters.map((meter) => meterRow(meter))))).rejects.toThrow('Only 200 Meter');
+    expect(await stock()).toEqual({ rolls: 0, meter: 200 });
+    expect(await client.sale.count()).toBe(0);
+    expect(await client.stockMovement.count()).toBe(0);
+  });
+  it('keeps repeated Meter rows separate and allocates oldest Meter-only batches', async () => {
+    await client.inventoryBatch.deleteMany();
+    const oldest = await batch(0, 75);
+    await batch(0, 125, '2026-09-02');
+    const result = await sales.create(input([meterRow(50), meterRow(60, 100)]));
+    expect(result.subtotal).toBe(12000);
+    expect(await stock()).toEqual({ rolls: 0, meter: 90 });
+    expect((await sales.details(result.id)).lines).toHaveLength(2);
+    expect(Number((await client.inventoryBatch.findUniqueOrThrow({ where: { id: oldest.id } })).availableMeter)).toBe(0);
+    await sales.void(result.id, 'Undo repeated Meter');
+    expect(await stock()).toEqual({ rolls: 0, meter: 200 });
+  });
+  it.each([false, true])('allows mixed rows in either order without clearing remaining Meter: %s', async (reverse) => {
+    await client.inventoryBatch.deleteMany();
+    await batch(1, 200);
+    const rows = [row(1, 20, 1000), meterRow()];
+    const result = await sales.create(input(reverse ? rows.reverse() : rows));
+    expect(result.subtotal).toBe(7000);
+    expect(await stock()).toEqual({ rolls: 0, meter: 130 });
+    expect((await sales.details(result.id)).lines.map((line) => line.mode).sort()).toEqual(['BY_METER', 'FULL_ROLL']);
+    await sales.void(result.id, 'Undo mixed sale');
+    expect(await stock()).toEqual({ rolls: 1, meter: 200 });
+  });
+  it('aggregates mixed Meter tracking and Meter sales before allocation', async () => {
+    await expect(sales.create(input([row(1, 1451), meterRow()]))).rejects.toThrow('Only 1,500 Meter');
+    expect(await stock()).toEqual({ rolls: 3, meter: 1500 });
+  });
+  it('accepts Meter over HTTP with no Roll price', async () => {
+    await client.inventoryBatch.deleteMany();
+    await batch(0, 200);
+    const response = await request(app.getHttpServer()).post('/sales').send(input([meterRow()]));
+    expect(response.status).toBe(201);
+    expect(response.body.subtotal).toBe(6000);
+  });
+  it.each([
+    { rollsSold: 1 }, { rollsSold: -1 }, { rollsSold: 0.5 },
+    { meterSold: 0 }, { meterSold: -1 }, { meterSold: 1.001 },
+    { unitPricePerMeter: 0 }, { unitPricePerMeter: null }, { unitPricePerMeter: '120' },
+    { unitPricePerMeter: 1.001 }, { mode: 'INVALID' }, { unitPricePerRoll: 100 },
+  ])('rejects invalid Meter rows at HTTP and service boundaries: %j', async (change) => {
+    const dto = input([{ ...meterRow(), ...change } as unknown as CreateSaleDto['lines'][number]]);
+    expect((await request(app.getHttpServer()).post('/sales').send(dto)).status).toBe(400);
+    await expect(sales.create(dto)).rejects.toThrow('Row 1:');
+    expect(await client.sale.count()).toBe(0);
+  });
+  it('rounds fractional Meter pricing once to cents', async () => {
+    const result = await sales.create(input([meterRow(1.25, 1.25)]));
+    expect(result.subtotal).toBe(1.56);
+  });
   it.each([2, 3])(
     'accepts %i intentional same-color rows and preserves their snapshots',
     async (count) => {

@@ -1,6 +1,7 @@
+import { appendActivity } from '../activity/activity-write.js';
 import { readDueSources } from '../customers/account-balances.js';
 import { isAccountingWriteConflict, lockCustomerAccount } from '../customers/payment-accounting.js';
-import { saleLineAmount, MAX_SALE_AMOUNT } from '@afia/contracts';
+import { meterSaleLineAmount, saleLineAmount, MAX_SALE_AMOUNT } from '@afia/contracts';
 import { Prisma } from '../generated/prisma/client.js';
 import { readSalesLedger } from './sales-ledger.js';
 import type { SalesLedgerQuery } from '@afia/contracts';
@@ -164,6 +165,8 @@ export class SalesService {
         itemName: line.itemNameSnapshot ?? line.variant.product.name,
         color: line.colorNameSnapshot || line.variant.color,
         description: line.descriptionSnapshot ?? null,
+        mode: line.mode,
+        unitPricePerMeter: line.ratePerMeter == null ? null : Number(line.ratePerMeter),
         rollsSold: line.rollsSold,
         meterSold: Number(line.meterSold) > 0 ? Number(line.meterSold) : null,
         unitPricePerRoll: line.unitPricePerRoll == null ? null : Number(line.unitPricePerRoll),
@@ -212,7 +215,14 @@ export class SalesService {
       throw new BadRequestException('Add at least one sale row.');
     const pricedLines = input.lines.map((line, index) => {
       try {
-        const lineTotal = saleLineAmount(line.rollsSold, line.unitPricePerRoll);
+        const mode = line.mode === undefined ? 'FULL_ROLL' : line.mode;
+        if (mode !== 'FULL_ROLL' && mode !== 'BY_METER') throw new Error('Choose Roll or Meter.');
+        if (mode === 'BY_METER' && line.rollsSold !== 0) throw new Error('Meter sales must sell zero Rolls.');
+        if (mode === 'BY_METER' && line.unitPricePerRoll !== undefined) throw new Error('Use Unit Price / Meter for Meter sales.');
+        if (mode === 'FULL_ROLL' && line.unitPricePerMeter !== undefined) throw new Error('Use Unit Price / Roll for Roll sales.');
+        const lineTotal = mode === 'BY_METER'
+          ? meterSaleLineAmount(line.meterSold ?? 0, line.unitPricePerMeter!)
+          : saleLineAmount(line.rollsSold, line.unitPricePerRoll!);
         const meter = line.meterSold ?? 0;
         if (
           !Number.isFinite(meter) ||
@@ -221,7 +231,7 @@ export class SalesService {
           meter > 9999999999.99
         )
           throw new Error('Enter valid Meter with at most two decimal places.');
-        return { ...line, lineTotal };
+        return { ...line, mode, lineTotal };
       } catch (error) {
         throw new BadRequestException(
           `Row ${index + 1}: ${error instanceof Error ? error.message : 'Invalid sale row.'}`,
@@ -231,7 +241,7 @@ export class SalesService {
     const decimalSubtotal = pricedLines.reduce(
       (sum, line) =>
         sum.plus(
-          new Prisma.Decimal(line.unitPricePerRoll).times(line.rollsSold),
+          new Prisma.Decimal(line.lineTotal),
         ),
       new Prisma.Decimal(0),
     );
@@ -263,6 +273,7 @@ export class SalesService {
                 tx,
                 input.customer,
                 input.customerId,
+                actorId,
               );
             } else {
               const existing = await tx.customer.findFirst({
@@ -276,6 +287,7 @@ export class SalesService {
             const previousOutstandingBeforeSale = (await readDueSources(tx, customerId)).reduce((sum, s) => sum.plus(s.due), new Prisma.Decimal(0));
             // Validate the whole sale before allocating. Repeated rows keep their identity,
             // while all requests for a variant share one stock pool.
+            const meterVariants = new Set(pricedLines.filter((line) => line.mode === 'BY_METER').map((line) => line.variantId));
             const lastAllocationByBatch = new Map<string, string>();
             const stockByVariant = new Map<
               string,
@@ -288,7 +300,9 @@ export class SalesService {
               const batches = await tx.inventoryBatch.findMany({
                 where: {
                   variantId,
-                  availableRolls: { gt: 0 },
+                  ...(meterVariants.has(variantId)
+                    ? { OR: [{ availableRolls: { gt: 0 } }, { availableMeter: { gt: 0 } }] }
+                    : { availableRolls: { gt: 0 } }),
                   container: { archivedAt: null },
                   variant: { archivedAt: null, product: { archivedAt: null } },
                 },
@@ -371,12 +385,12 @@ export class SalesService {
                 data: {
                   saleId: sale.id,
                   variantId: requested.variantId,
-                  mode: 'FULL_ROLL',
+                  mode: requested.mode,
                   rollsSold: requested.rollsSold,
                   meterSold: requestedMeter,
-                  ratePerMeter: null,
+                  ratePerMeter: requested.mode === 'BY_METER' ? requested.unitPricePerMeter : null,
                   discount: 0,
-                  unitPricePerRoll: requested.unitPricePerRoll,
+                  unitPricePerRoll: requested.mode === 'FULL_ROLL' ? requested.unitPricePerRoll : null,
                   lineTotal: requested.lineTotal,
                   itemCodeSnapshot: variant.product.itemCode,
                   itemNameSnapshot: variant.product.name,
@@ -401,7 +415,7 @@ export class SalesService {
                 );
                 // Do not discard Meter needed by a later repeated row.
                 const meterAfter =
-                  isLastVariantRow && rollsAfter <= 0
+                  isLastVariantRow && !meterVariants.has(requested.variantId) && rollsAfter <= 0
                     ? 0
                     : calculatedMeterAfter;
                 const normalizedMeter = money(
@@ -459,7 +473,7 @@ export class SalesService {
                 throw new BadRequestException(
                   'Stock changed while allocating this sale. Please try again.',
                 );
-              if (isLastVariantRow) {
+              if (isLastVariantRow && !meterVariants.has(requested.variantId)) {
                 // Preserve the zero-Roll Meter rule after all repeated rows have allocated.
                 const remaining = await tx.inventoryBatch.aggregate({
                   where: { variantId: requested.variantId },
@@ -513,14 +527,14 @@ export class SalesService {
                   method: input.paymentMethod ?? settings.defaultPaymentMethod,
                 },
               });
-            await tx.auditLog.create({
-              data: {
+            await appendActivity(tx, {
                 action: 'SALE_CREATED',
                 entityType: 'Sale',
                 entityId: sale.id,
-                userId: actorId,
-              },
-            });
+                actorId: actorId,
+                metadata: { reference: invoiceNumber, label: customer.name, customerId, subtotal, totalAmount, discountAmount, receivedAmount,
+                  lines: pricedLines.map((line) => ({ variantId: line.variantId, mode: line.mode, rollsSold: line.rollsSold, meterSold: line.meterSold ?? 0, unitPrice: line.mode === 'BY_METER' ? line.unitPricePerMeter! : line.unitPricePerRoll!, lineTotal: line.lineTotal })) },
+              });
             return {
               id: sale.id,
               invoiceNumber,
@@ -538,7 +552,7 @@ export class SalesService {
         );
         if (input.emailInvoice && created.emailRecipient && this.mail) {
           try {
-            await this.mail.sendInvoice(await this.details(created.id));
+            await this.mail.sendInvoice(await this.details(created.id), undefined, actorId);
             return { ...created, emailStatus: 'sent' };
           } catch {
             return { ...created, emailStatus: 'failed' };
@@ -575,11 +589,11 @@ export class SalesService {
     throw new ConflictException('The sale was busy. Please try again.');
   }
 
-  async emailInvoice(id: string) {
+  async emailInvoice(id: string, actorId?: string) {
     if (!this.mail)
       throw new ConflictException('Invoice email is not available.');
     const invoice = await this.details(id);
-    return this.mail.sendInvoice(invoice, invoice.currentCustomerEmail);
+    return this.mail.sendInvoice(invoice, invoice.currentCustomerEmail, actorId);
   }
 
   async void(id: string, reason: string, actorId?: string) {
@@ -633,15 +647,14 @@ export class SalesService {
           paidAmount: 0,
         },
       });
-      await tx.auditLog.create({
-        data: {
+      await appendActivity(tx, {
           action: 'SALE_VOIDED',
+          metadata: { reference: sale.invoiceNumber, label: sale.customerNameSnapshot ?? '', totalAmount: String(sale.totalAmount) },
           entityType: 'Sale',
           entityId: id,
           reason: cleanReason,
-          userId: actorId,
-        },
-      });
+          actorId: actorId,
+        });
       return { id, voided: true };
     });
   }

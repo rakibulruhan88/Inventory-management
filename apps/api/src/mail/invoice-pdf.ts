@@ -174,7 +174,7 @@ export function createInvoicePdf(invoice: SaleInvoice): Promise<Buffer> {
       'Color',
       'Rolls',
       'Meter',
-      'Price / Roll',
+      invoice.lines.some((line) => line.mode === 'BY_METER') ? 'Unit Price' : 'Price / Roll',
       'Amount',
     ];
     const tableHeader = () => {
@@ -210,12 +210,12 @@ export function createInvoicePdf(invoice: SaleInvoice): Promise<Buffer> {
     tableHeader();
     for (const line of invoice.lines) {
       const values = [
-        line.itemCode,
+        `${line.itemCode}\nSell By: ${line.mode === 'BY_METER' ? 'Meter' : 'Roll'}`,
         line.description || line.itemName || '—',
         line.color,
         String(line.rollsSold),
         line.meterSold?.toLocaleString('en-BD') ?? '—',
-        money(line.unitPricePerRoll),
+        money(line.mode === 'BY_METER' ? line.unitPricePerMeter ?? null : line.unitPricePerRoll),
         money(line.lineTotal),
       ];
       const rowHeight = Math.max(
@@ -228,7 +228,7 @@ export function createInvoicePdf(invoice: SaleInvoice): Promise<Buffer> {
               8.5,
               i === 0,
               i > 4 ? 'Money' : undefined,
-            ) + 22,
+            ) + 22 + (i === 5 ? 14 : 0),
         ),
       );
       if (y + rowHeight > bottom) {
@@ -237,7 +237,7 @@ export function createInvoicePdf(invoice: SaleInvoice): Promise<Buffer> {
       }
       // Tall source text is flowed by PDFKit; normal row heights are measured,
       // so long descriptions and monetary values are never clipped to fixed cells.
-      values.forEach((v, i) =>
+      values.forEach((v, i) => {
         text(
           v,
           left + offsets[i] + 6,
@@ -247,8 +247,14 @@ export function createInvoicePdf(invoice: SaleInvoice): Promise<Buffer> {
           i === 0,
           i > 2 ? 'right' : 'left',
           i > 4 ? 'Money' : undefined,
-        ),
-      );
+        );
+        if (i === 5) text(
+          `/ ${line.mode === 'BY_METER' ? 'Meter' : 'Roll'}`,
+          left + offsets[i] + 6,
+          y + 11 + height(v, widths[i] - 12, 8.5, false, 'Money') + 3,
+          widths[i] - 12, 8, false, 'right',
+        );
+      });
       y += rowHeight;
       rule(y);
     }

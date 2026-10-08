@@ -1,14 +1,16 @@
 import {
   customerPhoneError,
   saleLineAmount,
-  MAX_SALE_AMOUNT,
+  meterSaleLineAmount,
 } from "@afia/contracts";
 import { z } from "zod";
 const saleLine = z
   .object({
+    mode: z.enum(["FULL_ROLL", "BY_METER"]).optional(),
+    unitPricePerMeter: z.number().optional(),
     entryKey: z.string().optional(),
     variantId: z.string().min(1, "Choose an item and color."),
-    rollsSold: z.number().int().min(1, "Enter at least one roll."),
+    rollsSold: z.number().int().min(0, "Rolls cannot be negative."),
     meterSold: z
       .number()
       .min(0, "Meter cannot be negative.")
@@ -17,18 +19,26 @@ const saleLine = z
         (value) => /^\d+(?:\.\d{1,2})?$/.test(String(value)),
         "Use at most two decimal places.",
       ),
-    unitPricePerRoll: z
-      .number({ error: "Unit Price / Roll is required." })
-      .positive("Unit Price / Roll must be greater than zero.")
-      .max(MAX_SALE_AMOUNT),
+    unitPricePerRoll: z.number().optional(),
   })
   .superRefine((line, context) => {
+    if (line.mode !== "BY_METER" && line.rollsSold < 1) {
+      context.addIssue({ code: "custom", path: ["rollsSold"], message: "Enter at least one roll." });
+      return;
+    }
+    if (line.mode === "BY_METER" && line.meterSold <= 0) {
+      context.addIssue({ code: "custom", path: ["meterSold"], message: "Enter Meter greater than zero." });
+      return;
+    }
     try {
-      saleLineAmount(line.rollsSold, line.unitPricePerRoll);
+      if (line.mode === "BY_METER") {
+        if (line.rollsSold !== 0) throw new Error("Meter sales must sell zero Rolls.");
+        meterSaleLineAmount(line.meterSold, line.unitPricePerMeter ?? 0);
+      } else saleLineAmount(line.rollsSold, line.unitPricePerRoll ?? 0);
     } catch (error) {
       context.addIssue({
         code: "custom",
-        path: ["unitPricePerRoll"],
+        path: [line.mode === "BY_METER" ? "unitPricePerMeter" : "unitPricePerRoll"],
         message: error instanceof Error ? error.message : "Invalid unit price.",
       });
     }

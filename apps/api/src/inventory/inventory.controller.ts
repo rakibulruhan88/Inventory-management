@@ -36,23 +36,23 @@ export class InventoryController {
   }
 
   @Patch('items/:id')
-  updateProduct(@Param('id') id: string, @Body() input: UpdateProductDto) {
-    return this.inventory.updateProduct(id, input);
+  updateProduct(@Param('id') id: string, @Body() input: UpdateProductDto, @CurrentUser() user: AuthUser) {
+    return this.inventory.updateProduct(id, input, user.id);
   }
 
   @Delete('items/:id')
-  archiveProduct(@Param('id') id: string) {
-    return this.inventory.archiveProduct(id);
+  archiveProduct(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.inventory.archiveProduct(id, user.id);
   }
 
   @Patch('variants/:id')
-  updateVariant(@Param('id') id: string, @Body() input: UpdateVariantDto) {
-    return this.inventory.updateVariant(id, input);
+  updateVariant(@Param('id') id: string, @Body() input: UpdateVariantDto, @CurrentUser() user: AuthUser) {
+    return this.inventory.updateVariant(id, input, user.id);
   }
 
   @Delete('variants/:id')
-  archiveVariant(@Param('id') id: string) {
-    return this.inventory.archiveVariant(id);
+  archiveVariant(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.inventory.archiveVariant(id, user.id);
   }
   @Post('adjustments')
   adjust(@Body() input: StockAdjustmentDto, @CurrentUser() user: AuthUser) {

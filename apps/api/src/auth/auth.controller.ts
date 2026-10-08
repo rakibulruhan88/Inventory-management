@@ -45,7 +45,8 @@ export class AuthController {
     response.cookie(SESSION_COOKIE, result.token, sessionCookieOptions());
     return { user: result.user };
   }
-  @Post('logout') logout(@Res({ passthrough: true }) response: Response) {
+  @Post('logout') async logout(@Res({ passthrough: true }) response: Response, @CurrentUser() user: AuthUser) {
+    await this.auth.recordSignOut(user.id);
     response.clearCookie(SESSION_COOKIE, { path: '/' });
     return { signedOut: true };
   }

@@ -1,3 +1,5 @@
+import type { AuthUser } from '@afia/contracts';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import {
   Body,
   Controller,
@@ -18,10 +20,10 @@ export class ContainersController {
   @Get() list(@Query('search') search?: string) {
     return this.containers.list(search);
   }
-  @Patch(':id') update(@Param('id') id: string, @Body() input: ContainerDto) {
-    return this.containers.update(id, input);
+  @Patch(':id') update(@Param('id') id: string, @Body() input: ContainerDto, @CurrentUser() user: AuthUser) {
+    return this.containers.update(id, input, user.id);
   }
-  @Delete(':id') archive(@Param('id') id: string) {
-    return this.containers.archive(id);
+  @Delete(':id') archive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.containers.archive(id, user.id);
   }
 }

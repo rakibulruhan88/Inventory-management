@@ -1,3 +1,4 @@
+import { auditMutation } from '../activity/activity-write.js';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import type { StoreSettingsContract } from '@afia/contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -18,7 +19,7 @@ export class SettingsService {
       defaultPaymentMethod: x.defaultPaymentMethod,
     };
   }
-  async update(input: SettingsDto) {
+  async update(input: SettingsDto, actorId?: string) {
     this.validateBrandImage(input.logoUrl);
     this.validateBrandImage(input.faviconUrl);
     const data = {
@@ -36,11 +37,11 @@ export class SettingsService {
       storeEmail: input.storeEmail || null,
       storeAddress: input.storeAddress || null,
     };
-    const x = await this.prisma.storeSettings.upsert({
+    const x = await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'StoreSettings', entityId: 'default', actorId }, async (tx) => tx.storeSettings.upsert({
       where: { id: 'default' },
       create: data,
       update: data,
-    });
+    }));
     const { invoiceSequence: _invoiceSequence, ...settings } = x;
     return {
       ...settings,

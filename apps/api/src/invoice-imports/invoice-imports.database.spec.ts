@@ -37,7 +37,7 @@ describe('invoice import PostgreSQL persistence and inventory safety', () => {
   ];
   beforeAll(async () => {
     await admin.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
-    for (const table of ['User', 'InvoiceImportDraft', ...domain])
+    for (const table of ['User', 'AuditLog', 'InvoiceImportDraft', ...domain])
       await admin.$executeRawUnsafe(
         `CREATE TABLE "${schema}"."${table}" (LIKE public."${table}" INCLUDING ALL)`,
       );
@@ -64,7 +64,7 @@ describe('invoice import PostgreSQL persistence and inventory safety', () => {
       }[]
     >`SELECT table_name::text, column_name::text, udt_name::text, column_default::text FROM information_schema.columns WHERE table_schema = 'public' AND data_type = 'USER-DEFINED'`;
     for (const column of columns.filter((column) =>
-      ['User', 'InvoiceImportDraft', ...domain].includes(column.table_name),
+      ['User', 'AuditLog', 'InvoiceImportDraft', ...domain].includes(column.table_name),
     )) {
       const target = `"${schema}"."${column.table_name}"`;
       await admin.$executeRawUnsafe(

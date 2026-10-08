@@ -1,3 +1,5 @@
+import type { AuthUser } from '@afia/contracts';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import { Body, Controller, Get, Inject, Put } from '@nestjs/common';
 import { SettingsDto } from './settings.dto.js';
 import { SettingsService } from './settings.service.js';
@@ -9,7 +11,7 @@ export class SettingsController {
   @Get() get() {
     return this.service.get();
   }
-  @Put() update(@Body() input: SettingsDto) {
-    return this.service.update(input);
+  @Put() update(@Body() input: SettingsDto, @CurrentUser() user: AuthUser) {
+    return this.service.update(input, user.id);
   }
 }

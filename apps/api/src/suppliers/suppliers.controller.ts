@@ -1,3 +1,5 @@
+import type { AuthUser } from '@afia/contracts';
+import { CurrentUser } from '../auth/current-user.decorator.js';
 import {
   Body,
   Controller,
@@ -31,20 +33,21 @@ export class SuppliersController {
   }
 
   @Post()
-  create(@Body() input: CreateSupplierDto): Promise<SupplierSummary> {
-    return this.suppliers.create(input);
+  create(@Body() input: CreateSupplierDto, @CurrentUser() user: AuthUser): Promise<SupplierSummary> {
+    return this.suppliers.create(input, user.id);
   }
 
   @Patch(':id')
   update(
     @Param('id') id: string,
     @Body() input: UpdateSupplierDto,
+    @CurrentUser() user: AuthUser,
   ): Promise<SupplierSummary> {
-    return this.suppliers.update(id, input);
+    return this.suppliers.update(id, input, user.id);
   }
 
   @Delete(':id')
-  archive(@Param('id') id: string) {
-    return this.suppliers.archive(id);
+  archive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.suppliers.archive(id, user.id);
   }
 }

@@ -120,3 +120,11 @@ describe('Invoice PDF formatting', () => {
     expect(text).toContain('Previous Due —');
   });
 });
+
+it('prints Meter mode, sold Meter, price basis and amount in the PDF', async () => {
+  const [text] = await read({ ...fixture, lines: [{ ...fixture.lines[0], mode: 'BY_METER', rollsSold: 0, meterSold: 50, unitPricePerRoll: null, unitPricePerMeter: 120, lineTotal: 6000 }] });
+  expect(text).toContain('Sell By: Meter');
+  expect(text).toContain('50');
+  expect(text).toContain('৳120 / Meter');
+  expect(text).toContain('৳6,000');
+});

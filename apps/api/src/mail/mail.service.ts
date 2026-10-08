@@ -1,3 +1,4 @@
+import { appendActivity } from '../activity/activity-write.js';
 import {
   Inject,
   Injectable,
@@ -27,7 +28,7 @@ export class MailService {
     @Inject(ConfigService) private config: ConfigService,
     @Inject(PrismaService) private prisma: PrismaService,
   ) {}
-  async sendInvoice(invoice: SaleInvoice, recipientOverride?: string | null) {
+  async sendInvoice(invoice: SaleInvoice, recipientOverride?: string | null, actorId?: string) {
     const recipient = recipientOverride || invoice.customer.email;
     if (!recipient)
       throw new ServiceUnavailableException(
@@ -42,6 +43,7 @@ export class MailService {
         invoice.id,
         recipient,
         'Invoice email is not configured yet.',
+        actorId,
       );
     try {
       const pdf = await createInvoicePdf(invoice);
@@ -93,8 +95,9 @@ export class MailService {
             : []),
         ],
       });
-      await this.prisma.invoiceEmailLog.create({
-        data: { saleId: invoice.id, recipientEmail: recipient, status: 'SENT' },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.invoiceEmailLog.create({ data: { saleId: invoice.id, recipientEmail: recipient, status: 'SENT' } });
+        await appendActivity(tx, { action: 'INVOICE_EMAIL_SENT', entityType: 'Sale', entityId: invoice.id, actorId, metadata: { reference: invoice.invoiceNumber, label: invoice.customer.name, recipient } });
       });
       return { sent: true, recipient, filename: invoiceFileName(invoice) };
     } catch (error) {
@@ -102,6 +105,7 @@ export class MailService {
         invoice.id,
         recipient,
         error instanceof Error ? error.message : 'Email delivery failed.',
+        actorId,
       );
     }
   }
@@ -109,14 +113,18 @@ export class MailService {
     saleId: string,
     recipient: string,
     reason: string,
+    actorId?: string,
   ): Promise<never> {
-    await this.prisma.invoiceEmailLog.create({
+    await this.prisma.$transaction(async (tx) => {
+    await tx.invoiceEmailLog.create({
       data: {
         saleId,
         recipientEmail: recipient,
         status: 'FAILED',
         failureReason: reason.slice(0, 500),
       },
+    });
+    await appendActivity(tx, { action: 'INVOICE_EMAIL_FAILED', entityType: 'Sale', entityId: saleId, actorId, reason: 'The invoice email could not be sent.', metadata: { recipient } });
     });
     throw new ServiceUnavailableException(
       reason.includes('configured')

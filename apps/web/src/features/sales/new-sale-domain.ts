@@ -1,5 +1,7 @@
-import { saleLineAmount, saleMoneyCents } from "@afia/contracts";
+import { meterSaleLineAmount, saleLineAmount, saleMoneyCents } from "@afia/contracts";
 export type DraftColor = {
+  mode?: "FULL_ROLL" | "BY_METER";
+  unitPricePerMeter?: number;
   variantId?: string;
   rollsSold?: number;
   meterSold?: number;
@@ -16,6 +18,7 @@ export const removeColorRow = <T>(rows: T[], index: number): T[] =>
   rows.filter((_, i) => i !== index);
 export function previewAmount(row: DraftColor): number {
   try {
+    if (row.mode === "BY_METER") return meterSaleLineAmount(row.meterSold ?? 0, row.unitPricePerMeter ?? 0);
     return saleLineAmount(row.rollsSold ?? 0, row.unitPricePerRoll ?? 0);
   } catch {
     return 0;
@@ -93,7 +96,7 @@ export function stockErrors(
 /** Repeated variants stay selectable, even when earlier draft rows consume their stock. */
 export function colorOptions(stock: StockColor[]) {
   return stock
-    .filter((color) => color.availableRolls > 0)
+    .filter((color) => color.availableRolls > 0 || color.availableMeter > 0)
     .map((color) => ({
       value: color.variantId,
       label: color.color || "Unnamed color",

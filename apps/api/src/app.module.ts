@@ -1,3 +1,4 @@
+import { ActivityModule } from './activity/activity.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
@@ -26,6 +27,7 @@ import { AuthGuard } from './auth/auth.guard.js';
     }),
     PrismaModule,
     FinanceModule,
+    ActivityModule,
     SuppliersModule,
     PurchasesModule,
     InventoryModule,
