@@ -11,6 +11,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  Max,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -18,9 +19,18 @@ import { InlinePartyDto } from '../common/inline-party.dto.js';
 
 class CreateSaleLineDto implements CreateSaleLine {
   @IsString() @MinLength(1) variantId: string;
-  @IsInt() @Min(1) rollsSold: number;
-  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) meterSold?: number;
-  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) lineTotal: number;
+  @IsInt() @Min(1) @Max(2147483647) rollsSold: number;
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(9999999999.99)
+  meterSold?: number;
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(999999999999.99)
+  unitPricePerRoll: number;
+  // Accepted for older clients that also send a preview, but never used for pricing.
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) lineTotal?: number;
 }
 export class CreateSaleDto implements CreateSaleRequest {
   @IsOptional() @IsString() @MinLength(1) customerId?: string;

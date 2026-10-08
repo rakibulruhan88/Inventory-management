@@ -90,8 +90,12 @@ export type CustomerSummary = {
   totalSales: number;
   totalPaid: number;
   totalDue: number;
+  openingDue?: OpeningDue | null;
 };
 export type PaymentHistory = {
+  receiptId?: string;
+  receiptNumber?: string;
+  allocations?: PaymentReceiptAllocation[];
   id: string;
   receivedAt: string;
   amount: number;
@@ -201,7 +205,9 @@ export type CreateSaleLine = {
   variantId: string;
   rollsSold: number;
   meterSold?: number;
-  lineTotal: number;
+  unitPricePerRoll: number;
+  /** Optional legacy client total is ignored; the API always calculates the amount. */
+  lineTotal?: number;
 };
 export type CreateSaleRequest = {
   customerId?: string;
@@ -235,6 +241,7 @@ export type SaleInvoiceLine = {
   color: string;
   rollsSold: number;
   meterSold: number | null;
+  unitPricePerRoll: number | null;
   lineTotal: number;
 };
 export type SaleInvoice = {
@@ -246,6 +253,8 @@ export type SaleInvoice = {
   voidReason: string | null;
   customerId: string;
   currentCustomerEmail: string | null;
+  previousOutstandingBeforeSale?: number | null;
+  outstandingAfterSale?: number | null;
   customer: {
     name: string;
     phone: string | null;
@@ -266,6 +275,11 @@ export type SaleInvoice = {
   lastEmailedAt: string | null;
 };
 export type ReceivePaymentRequest = {
+  idempotencyKey: string;
+  paidAt: string;
+  allocationMode: "AUTO" | "MANUAL";
+  allocations?: { saleId?: string; openingBalanceId?: string; amount: number; expectedDue: number }[];
+  expectedOutstanding: number;
   amount: number;
   method?: "CASH" | "BANK" | "MOBILE_BANKING" | "OTHER";
   reference?: string;
@@ -461,3 +475,64 @@ export type CustomerAccount = CustomerSummary & {
   payments: LedgerPage<PaymentHistory>;
 };
 export const SALES_BUSINESS_TIMEZONE = "Asia/Dhaka";
+
+export {
+  normalizeCustomerPhone,
+  customerPhoneError,
+  CUSTOMER_PHONE_ERROR,
+} from "./customer-phone.js";
+export type CustomerPhoneConflict = {
+  code: "CUSTOMER_PHONE_CONFLICT";
+  message: string;
+  existingCustomer: {
+    id: string;
+    name: string;
+    phone: string | null;
+    archived: boolean;
+  };
+};
+
+export { saleLineAmount, saleMoneyCents, MAX_SALE_AMOUNT } from "./sale-pricing.js";
+
+export type PaymentReceiptAllocation = {
+  saleId: string | null; invoiceNumber: string | null; soldAt: string;
+  openingBalanceId?: string | null; sourceKind?: "SALE" | "OPENING";
+  amount: number; previousDue: number; remainingDue: number;
+};
+export type PaymentReceipt = {
+  id: string; receiptNumber: string; customerId: string;
+  customerName: string; customerPhone: string | null;
+  totalAmount: number; method: string; reference: string | null; notes: string | null;
+  paidAt: string; createdAt: string;
+  outstandingBefore: number; outstandingAfter: number;
+  allocations: PaymentReceiptAllocation[];
+};
+export type PaymentContext = {
+  customerId: string; customerName: string; customerPhone: string | null;
+  outstanding: number; invoices: SaleSummary[];
+  sources?: PaymentDueSource[];
+};
+
+export type OpeningDue = {
+  id: string; originalAmount: number; paidAmount: number; remainingDue: number;
+  balanceAsOf: string; note: string | null; createdAt: string;
+};
+export type OpeningDueRequest = {
+  amount: number; balanceAsOf: string; note?: string; idempotencyKey: string;
+};
+export type CustomerWithOpeningDueRequest = CustomerInput & { openingDue: OpeningDueRequest };
+export type PaymentDueSource = {
+  id: string; sourceKind: "SALE" | "OPENING";
+  saleId: string | null; openingBalanceId: string | null;
+  invoiceNumber: string | null; soldAt: string;
+  totalAmount: number; paidAmount: number; dueAmount: number;
+};
+export type OutstandingCustomerRow = Pick<CustomerSummary, "id" | "name" | "phone" | "totalDue"> & {
+  oldestDueInvoice: { id: string; invoiceNumber: string | null; soldAt: string; sourceKind: "SALE" | "OPENING" };
+  lastSoldAt: string | null;
+};
+export type OutstandingCustomersPage = LedgerPage<OutstandingCustomerRow> & { totalOutstanding: number };
+export type ReceiptLedgerRow = Pick<PaymentReceipt, "id" | "receiptNumber" | "customerId" | "customerName" | "customerPhone" | "paidAt" | "method" | "totalAmount">;
+export type PaymentListQuery = { search?: string; page?: number; pageSize?: number };
+
+export * from './finance.js';

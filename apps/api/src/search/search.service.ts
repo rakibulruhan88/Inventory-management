@@ -1,3 +1,4 @@
+import { customerPhoneSearch } from '../customers/customer-identity.js';
 import { Inject, Injectable } from '@nestjs/common';
 import type { GlobalSearchGroup } from '@afia/contracts';
 import { normalizeText } from '../common/normalize.js';
@@ -7,6 +8,7 @@ export class SearchService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
   async search(query = ''): Promise<GlobalSearchGroup[]> {
     const q = normalizeText(query);
+    const phone = customerPhoneSearch(q);
     if (q.length < 2) return [];
     const [products, sales, purchases, containers, customers, suppliers] =
       await Promise.all([
@@ -68,6 +70,7 @@ export class SearchService {
             OR: [
               { name: { contains: q, mode: 'insensitive' } },
               { phone: { contains: q } },
+              ...(phone ? [{ normalizedPhone: phone }] : []),
               { email: { contains: q, mode: 'insensitive' } },
             ],
           },

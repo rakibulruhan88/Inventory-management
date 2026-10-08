@@ -53,15 +53,25 @@ export async function getApiHealth(): Promise<HealthResponse> {
   return response.json() as Promise<HealthResponse>;
 }
 
+export class ApiResponseError extends Error { status: number; constructor(message: string, status: number) { super(message); this.status = status; } }
+
 export class ApiFieldError extends Error {
   fieldErrors: InvoiceImportIssue[];
   constructor(message: string, fieldErrors: InvoiceImportIssue[]) { super(message); this.fieldErrors = fieldErrors; }
 }
 
+export class CustomerPhoneConflictError extends Error {
+  existingCustomer: import("@afia/contracts").CustomerPhoneConflict["existingCustomer"];
+  constructor(conflict: import("@afia/contracts").CustomerPhoneConflict) {
+    super(conflict.message);
+    this.existingCustomer = conflict.existingCustomer;
+  }
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.method && init.method !== "GET" && !navigator.onLine) {
     throw new Error(
-      "You’re offline. Sales and stock changes require an internet connection.",
+      "You’re offline. Please reconnect and try again.",
     );
   }
   const response = await fetch(`${apiUrl}${path}`, {
@@ -80,13 +90,21 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       message?: string | string[];
       fieldErrors?: InvoiceImportIssue[];
       blockingIssues?: InvoiceImportIssue[];
+      code?: string;
+      existingCustomer?: import('@afia/contracts').CustomerPhoneConflict['existingCustomer'];
     } | null;
     const message = Array.isArray(body?.message)
       ? body.message[0]
       : body?.message;
+    if (body?.code === "CUSTOMER_PHONE_CONFLICT" && body.existingCustomer)
+      throw new CustomerPhoneConflictError({
+        code: "CUSTOMER_PHONE_CONFLICT",
+        message: message ?? "Phone already belongs to an existing customer.",
+        existingCustomer: body.existingCustomer,
+      });
     if (body?.blockingIssues) throw new ApiFieldError(message ?? "Review the blocking issues.", body.blockingIssues);
     if (body?.fieldErrors) throw new ApiFieldError(message ?? "Check the review fields.", body.fieldErrors);
-    throw new Error(message ?? "Something went wrong. Please try again.");
+    throw new ApiResponseError(message ?? "Something went wrong. Please try again.", response.status);
   }
 
   return response.json() as Promise<T>;
@@ -180,6 +198,8 @@ export async function downloadSaleInvoicePdf(id: string) {
       message?: string | string[];
       fieldErrors?: InvoiceImportIssue[];
       blockingIssues?: InvoiceImportIssue[];
+      code?: string;
+      existingCustomer?: import('@afia/contracts').CustomerPhoneConflict['existingCustomer'];
     } | null;
     throw new Error(
       Array.isArray(body?.message)
@@ -209,8 +229,9 @@ export function receiveCustomerPayment(
   id: string,
   input: ReceivePaymentRequest,
 ) {
-  return apiRequest(`/customers/${id}/payments`, {
+  return apiRequest<import("@afia/contracts").PaymentReceipt>(`/customers/${id}/payments`, {
     method: "POST",
+    headers: { "X-Afia-Payment": "receive-payment" },
     body: JSON.stringify(input),
   });
 }
@@ -378,3 +399,36 @@ export function getCustomerAccount(id: string, page = 1) {
     `/customers/${encodeURIComponent(id)}/account?page=${page}&pageSize=25`,
   );
 }
+
+export function getPaymentContext(id: string) { return apiRequest<import("@afia/contracts").PaymentContext>(`/customers/${id}/payment-context`); }
+export function getPaymentReceipt(id: string, receiptId: string) { return apiRequest<import("@afia/contracts").PaymentReceipt>(`/customers/${id}/payment-receipts/${receiptId}`); }
+
+export function getOutstandingCustomers(query: import('@/features/payments/payments-types').PaymentListQuery) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)); });
+  return apiRequest<import('@/features/payments/payments-types').OutstandingCustomersPage>(`/payments/outstanding-customers?${params}`);
+}
+export function getRecentPaymentReceipts(query: import('@/features/payments/payments-types').PaymentListQuery) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)); });
+  return apiRequest<import('@afia/contracts').LedgerPage<import('@/features/payments/payments-types').ReceiptLedgerRow>>(`/payments/receipts?${params}`);
+}
+
+export function saveOpeningDue(id: string | undefined, input: import("@afia/contracts").CustomerWithOpeningDueRequest) {
+  return apiRequest<{customerId: string; openingDue: import("@afia/contracts").OpeningDue}>(
+    id ? `/customers/${encodeURIComponent(id)}/opening-due` : "/customers/with-opening-due", {
+      method: "POST", headers: {"X-Afia-Payment": "receive-payment"},
+      body: JSON.stringify(id ? input.openingDue : input),
+    });
+}
+
+export function getFinance(query: import('@afia/contracts').FinanceQuery) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key,value])=> {if(value !== undefined && value !== '') params.set(key,String(value));});
+  return apiRequest<import('@afia/contracts').FinancePage>(`/finance?${params}`);
+}
+export function createFinanceEntry(input: import('@afia/contracts').CreateFinanceEntry) {
+  return apiRequest<import('@afia/contracts').FinanceEntryDetail>('/finance/entries',{method:'POST',headers:{'X-Afia-Finance':'1'},body:JSON.stringify(input)});
+}
+export function getFinanceEntry(id:string) { return apiRequest<import('@afia/contracts').FinanceEntryDetail>(`/finance/entries/${encodeURIComponent(id)}`); }
+export function voidFinanceEntry(id:string,reason:string) { return apiRequest<import('@afia/contracts').FinanceEntryDetail>(`/finance/entries/${encodeURIComponent(id)}/void`,{method:'POST',headers:{'X-Afia-Finance':'1'},body:JSON.stringify({reason})}); }

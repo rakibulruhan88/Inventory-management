@@ -27,6 +27,7 @@ export function normalizePartyInput(input: PartyInput) {
   };
 }
 
+/** Supplier contacts only; Customer identity uses normalizeCustomerPhone. */
 export function normalizePhone(value?: string | null) {
   const clean = normalizeText(value ?? '');
   if (!clean) return '';
@@ -37,7 +38,7 @@ export function normalizePhone(value?: string | null) {
 export function resolvePartyMatch(
   input: ReturnType<typeof normalizePartyInput>,
   records: PartyRecord[],
-  label: 'customer' | 'supplier',
+  label: 'supplier',
 ) {
   if (input.id) {
     const selected = records.find((record) => record.id === input.id);

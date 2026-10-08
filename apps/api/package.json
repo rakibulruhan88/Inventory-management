@@ -26,7 +26,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
-    "invoice-imports:cleanup": "tsx src/invoice-imports/cleanup-invoice-imports.ts"
+    "invoice-imports:cleanup": "tsx src/invoice-imports/cleanup-invoice-imports.ts",
+    "customer-phone:audit": "tsx scripts/customer-phone-audit.ts"
   },
   "dependencies": {
     "@afia/contracts": "*",

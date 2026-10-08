@@ -1,3 +1,4 @@
+import { FinanceModule } from './finance/finance.module.js';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
@@ -24,6 +25,7 @@ import { AuthGuard } from './auth/auth.guard.js';
       envFilePath: ['.env', '../../.env'],
     }),
     PrismaModule,
+    FinanceModule,
     SuppliersModule,
     PurchasesModule,
     InventoryModule,

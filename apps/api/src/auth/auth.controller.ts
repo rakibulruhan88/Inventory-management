@@ -19,6 +19,7 @@ import { AuthService } from './auth.service.js';
 import { CurrentUser } from './current-user.decorator.js';
 import { Public } from './public.decorator.js';
 import type { AuthUser } from '@afia/contracts';
+import { SESSION_COOKIE, sessionCookieOptions } from './session-options.js';
 class LoginDto {
   @IsString() @MinLength(1) identifier: string;
   @IsString() @MinLength(8) password: string;
@@ -41,17 +42,11 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.auth.login(input.identifier, input.password);
-    response.cookie('afia_session', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    response.cookie(SESSION_COOKIE, result.token, sessionCookieOptions());
     return { user: result.user };
   }
   @Post('logout') logout(@Res({ passthrough: true }) response: Response) {
-    response.clearCookie('afia_session', { path: '/' });
+    response.clearCookie(SESSION_COOKIE, { path: '/' });
     return { signedOut: true };
   }
   @Get('me') me(@CurrentUser() user: AuthUser) {
@@ -76,7 +71,7 @@ export class AuthController {
       input.currentPassword,
       input.newPassword,
     );
-    response.clearCookie('afia_session', { path: '/' });
+    response.clearCookie(SESSION_COOKIE, { path: '/' });
     return result;
   }
 }

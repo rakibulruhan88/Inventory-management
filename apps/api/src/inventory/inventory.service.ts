@@ -1,3 +1,5 @@
+import { accountSourcesSql } from '../customers/account-balances.js';
+import { Prisma } from '../generated/prisma/client.js';
 import {
   BadRequestException,
   ConflictException,
@@ -31,10 +33,9 @@ export class InventoryService {
         _sum: { availableRolls: true, availableMeter: true },
         where: this.activeBatch,
       }),
-      this.prisma.sale.aggregate({
-        _sum: { totalAmount: true, paidAmount: true },
-        where: { status: 'COMPLETED' },
-      }),
+      this.prisma.$queryRaw<{ amount: Prisma.Decimal }[]>(
+        Prisma.sql`SELECT COALESCE(SUM(due), 0) AS amount FROM (${accountSourcesSql}) sources`,
+      ),
       this.prisma.sale.aggregate({
         _sum: { totalAmount: true },
         where: { status: 'COMPLETED', soldAt: { gte: todayStart } },
@@ -45,8 +46,7 @@ export class InventoryService {
       totalRolls: stock._sum.availableRolls ?? 0,
       totalMeters: Number(stock._sum.availableMeter ?? 0),
       openRolls: 0,
-      totalCustomerDue:
-        Number(due._sum.totalAmount ?? 0) - Number(due._sum.paidAmount ?? 0),
+      totalCustomerDue: Number(due[0].amount),
       todaySales: Number(today._sum.totalAmount ?? 0),
     };
   }

@@ -1,19 +1,14 @@
+import {
+  formatMoney,
+  LedgerError,
+  LedgerLoading,
+} from "@/features/sales/ledger-components";
+import "./customers.css";
+import { customerPhoneError } from "@afia/contracts";
 import { SourceDocument } from "@/features/purchases/source-document";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  ContainerSummary,
-  CustomerSummary,
-} from "@afia/contracts";
-import {
-  Container,
-  Edit3,
-  Plus,
-  Search,
-  Trash2,
-  Users,
-  WalletCards,
-  X,
-} from "lucide-react";
+import type { ContainerSummary, CustomerSummary } from "@afia/contracts";
+import { Edit3, Plus, Search, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -21,77 +16,31 @@ import { Drawer } from "vaul";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  CustomerPhoneConflictError,
   archiveContainer,
   archiveCustomer,
   createCustomer,
   getContainers,
   getCustomers,
-  receiveCustomerPayment,
   updateContainer,
   updateCustomer,
 } from "@/lib/api";
-function SearchBox({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <label className="relative mt-6 block">
-      <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-[var(--accent)]" />
-      <Input
-        className="h-13 pl-12"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
-    </label>
-  );
-}
-function Title({
-  icon: Icon,
-  title,
-  subtitle,
-}: {
-  icon: typeof Users;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="flex gap-4">
-      <span className="grid size-11 place-items-center rounded-xl bg-[var(--surface-warm)] text-[var(--accent)]">
-        <Icon className="size-5" />
-      </span>
-      <div>
-        <h1 className="text-2xl font-semibold sm:text-3xl">{title}</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
 export function CustomersPage() {
   const [params] = useSearchParams();
   const qc = useQueryClient();
   const [search, setSearch] = useState(params.get("search") ?? "");
+  const [dueFilter, setDueFilter] = useState("all");
   const [editing, setEditing] = useState<CustomerSummary | "new" | null>(null);
-  const [payment, setPayment] = useState<CustomerSummary | null>(null);
   const [confirm, setConfirm] = useState<CustomerSummary | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
-  const [amount, setAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<
-    "CASH" | "BANK" | "MOBILE_BANKING" | "OTHER"
-  >("CASH");
-  const [paymentNotes, setPaymentNotes] = useState("");
   const customers = useQuery({
     queryKey: ["customers", search],
     queryFn: () => getCustomers(search),
   });
+  const phoneError = customerPhoneError(phone);
   const emailValid = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const save = useMutation({
     mutationFn: () =>
@@ -105,25 +54,6 @@ export function CustomersPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
-  const pay = useMutation({
-    mutationFn: () =>
-      receiveCustomerPayment(payment!.id, {
-        amount,
-        method: paymentMethod,
-        notes: paymentNotes,
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["customers"] }),
-        qc.invalidateQueries({ queryKey: ["inventory-summary"] }),
-      ]);
-      setPayment(null);
-      setAmount(0);
-      setPaymentNotes("");
-      toast.success("Payment received");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
   const remove = useMutation({
     mutationFn: archiveCustomer,
     onSuccess: async () => {
@@ -134,107 +64,256 @@ export function CustomersPage() {
     onError: (e: Error) => toast.error(e.message),
   });
   const open = (c: CustomerSummary | "new") => {
+    save.reset();
     setEditing(c);
     setName(c === "new" ? "" : c.name);
     setPhone(c === "new" ? "" : (c.phone ?? ""));
     setEmail(c === "new" ? "" : (c.email ?? ""));
     setAddress(c === "new" ? "" : (c.address ?? ""));
   };
+  const rows = (customers.data ?? []).filter((c) =>
+    dueFilter === "due"
+      ? c.totalDue > 0
+      : dueFilter === "clear"
+        ? c.totalDue <= 0
+        : true,
+  );
+  const customerActions = (c: CustomerSummary) => (
+    <div className="customer-row-actions">
+      <Button asChild variant="outline" className="text-xs">
+        <Link to={`/customers/${c.id}`}>View Account</Link>
+      </Button>
+      {c.totalDue > 0 && (
+        <Button asChild variant="outline" className="text-xs">
+          <Link to={`/customers/${c.id}/receive-payment`}>Receive Payment</Link>
+        </Button>
+      )}
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={`Edit ${c.name}`}
+        onClick={() => open(c)}
+      >
+        <Edit3 className="size-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={`Archive ${c.name}`}
+        className="text-[var(--muted)]"
+        onClick={() => setConfirm(c)}
+      >
+        <Trash2 className="size-4" />
+      </Button>
+    </div>
+  );
   return (
     <Page>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <Title
-          icon={Users}
-          title="Customers"
-          subtitle="Sales, payments and customer outstanding."
-        />
-        <Button onClick={() => open("new")}>
-          <Plus className="size-4" /> Add customer
+      <header className="customers-header">
+        <div>
+          <p className="customers-eyebrow">Afia Leather · Customer accounts</p>
+          <h1>Customers</h1>
+          <p>Find an account, check its due and receive payments.</p>
+        </div>
+        <Button asChild>
+          <Link to="/customers/new">
+            <Plus className="size-4" />
+            Add Customer
+          </Link>
         </Button>
+      </header>
+      <div className="customers-toolbar">
+        <label className="customers-search">
+          <span className="sr-only">
+            Search customers by name, phone or email
+          </span>
+          <Search className="size-4" aria-hidden="true" />
+          <Input
+            type="search"
+            maxLength={200}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, phone or email…"
+          />
+        </label>
+        <div
+          className="customers-filters"
+          role="group"
+          aria-label="Customer due filter"
+        >
+          {[
+            ["all", "All Customers"],
+            ["due", "With Due"],
+            ["clear", "Clear"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              aria-pressed={dueFilter === value}
+              onClick={() => setDueFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      <SearchBox
-        value={search}
-        onChange={setSearch}
-        placeholder="Search name, phone or email..."
-      />
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {customers.data?.map((c) => (
-          <article
-            key={c.id}
-            className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)] transition hover:border-[var(--primary-border)]"
-          >
-            <div className="flex justify-between">
-              <div>
-                <h2 className="font-semibold"><Link className="hover:underline focus-visible:outline-2 focus-visible:outline-[var(--accent)]" to={`/customers/${c.id}`}>{c.name}</Link></h2>
-                <p className="text-sm text-[var(--muted)]">
-                  {c.phone || c.email || "No contact details"}
-                </p>
-                <Link
-                  className="mt-2 inline-block text-xs font-medium text-[var(--accent)]"
-                  to={`/customers/${c.id}`}
-                >
-                  View account
-                </Link>
-              </div>
-              <div>
-                <Button size="icon" variant="ghost" onClick={() => open(c)}>
-                  <Edit3 className="size-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="text-[var(--danger)]"
-                  onClick={() => setConfirm(c)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-[var(--surface-subtle)] p-3 text-center text-xs">
-              <span>
-                Sales
-                <br />
-                <strong>৳{c.totalSales.toLocaleString()}</strong>
-              </span>
-              <span>
-                Paid
-                <br />
-                <strong>৳{c.totalPaid.toLocaleString()}</strong>
-              </span>
-              <span>
-                Outstanding
-                <br />
-                <strong className="text-[var(--warning)]">
-                  ৳{c.totalDue.toLocaleString()}
-                </strong>
-              </span>
-            </div>
-            {c.totalDue > 0 && (
+      <section
+        className="customers-directory"
+        aria-label="Customer accounts"
+        aria-busy={customers.isFetching}
+      >
+        {customers.isError ? (
+          <LedgerError
+            message={customers.error.message}
+            retry={() => void customers.refetch()}
+          />
+        ) : customers.isPending ? (
+          <LedgerLoading />
+        ) : !rows.length ? (
+          <div className="customers-empty">
+            <h2>No customers found</h2>
+            <p>
+              {search || dueFilter !== "all"
+                ? "Try another search or show all customer accounts."
+                : "Add your first customer, with old due if needed."}
+            </p>
+            {search || dueFilter !== "all" ? (
               <Button
                 variant="outline"
-                className="mt-3 w-full"
                 onClick={() => {
-                  setPayment(c);
-                  setAmount(c.totalDue);
+                  setSearch("");
+                  setDueFilter("all");
                 }}
               >
-                <WalletCards className="size-4" /> Receive Payment
+                Clear Filters
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link to="/customers/new">Add Customer</Link>
               </Button>
             )}
-          </article>
-        ))}
-      </div>
+          </div>
+        ) : (
+          <>
+            <table className="customers-table">
+              <caption className="sr-only">
+                Customer sales, payments and remaining due
+              </caption>
+              <thead>
+                <tr>
+                  {[
+                    "Customer",
+                    "Sales",
+                    "Payments",
+                    "Total Due",
+                    "Actions",
+                  ].map((label) => (
+                    <th key={label} scope="col">
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <Link className="customer-name" to={`/customers/${c.id}`}>
+                        {c.name}
+                      </Link>
+                      <p className="customer-contact">
+                        {c.phone || c.email || "No contact details"}
+                      </p>
+                      {c.address && (
+                        <p className="customer-address">{c.address}</p>
+                      )}
+                    </td>
+                    <td className="customer-amount">
+                      {formatMoney(c.totalSales)}
+                    </td>
+                    <td className="customer-amount">
+                      {formatMoney(c.totalPaid)}
+                    </td>
+                    <td className="customer-amount">
+                      <strong className={c.totalDue > 0 ? "customer-due" : ""}>
+                        {formatMoney(c.totalDue)}
+                      </strong>
+                      <span className="customer-due-caption">
+                        {c.totalDue > 0 ? "Due remaining" : "Clear"}
+                      </span>
+                    </td>
+                    <td>{customerActions(c)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="customers-mobile">
+              {rows.map((c) => (
+                <article key={c.id}>
+                  <div className="customer-mobile-heading">
+                    <div>
+                      <Link className="customer-name" to={`/customers/${c.id}`}>
+                        {c.name}
+                      </Link>
+                      <p className="customer-contact">
+                        {c.phone || c.email || "No contact details"}
+                      </p>
+                    </div>
+                    <div className="customer-mobile-due">
+                      <span>Total Due</span>
+                      <strong className={c.totalDue > 0 ? "customer-due" : ""}>
+                        {formatMoney(c.totalDue)}
+                      </strong>
+                    </div>
+                  </div>
+                  {c.address && <p className="customer-address">{c.address}</p>}
+                  <dl className="customer-mobile-money">
+                    <div>
+                      <dt>Sales</dt>
+                      <dd>{formatMoney(c.totalSales)}</dd>
+                    </div>
+                    <div>
+                      <dt>Payments</dt>
+                      <dd>{formatMoney(c.totalPaid)}</dd>
+                    </div>
+                  </dl>
+                  {customerActions(c)}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+        {customers.isSuccess && (
+          <footer className="customers-list-footer">
+            <span>
+              {rows.length} customers shown
+              {customers.isFetching ? " · Updating…" : ""}
+            </span>
+            <span>Search to find more · Up to 50 results</span>
+          </footer>
+        )}
+      </section>
       <Drawer.Root
         open={!!editing}
         onOpenChange={(v) => !v && setEditing(null)}
       >
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
-          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl bg-white p-5">
+          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-lg bg-[var(--surface)] p-5">
             <div className="mx-auto max-w-lg">
-              <Drawer.Title className="text-lg font-semibold">
-                {editing === "new" ? "New customer" : "Edit customer"}
-              </Drawer.Title>
+              <div className="flex items-center justify-between gap-3">
+                <Drawer.Title className="text-lg font-semibold">
+                  {editing === "new" ? "New customer" : "Edit customer"}
+                </Drawer.Title>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Close customer form"
+                  disabled={save.isPending}
+                  onClick={() => setEditing(null)}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
               <div className="mt-4 space-y-3">
                 <label className="block text-sm font-medium">
                   Customer Name *
@@ -252,10 +331,26 @@ export function CustomersPage() {
                   </span>
                   <Input
                     className="mt-2"
+                    type="tel"
+                    aria-invalid={!!phoneError}
+                    aria-describedby={
+                      phoneError ? "customer-phone-error" : undefined
+                    }
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      save.reset();
+                    }}
                   />
                 </label>
+                {phoneError && (
+                  <p
+                    id="customer-phone-error"
+                    className="text-xs text-[var(--danger)]"
+                  >
+                    {phoneError}
+                  </p>
+                )}
                 <label className="block text-sm font-medium">
                   Email{" "}
                   <span className="font-normal text-[var(--muted)]">
@@ -285,72 +380,30 @@ export function CustomersPage() {
                   />
                 </label>
               </div>
+              {save.error instanceof CustomerPhoneConflictError && (
+                <div
+                  role="alert"
+                  className="mt-4 border-l-2 border-[var(--warning)] pl-3 text-sm"
+                >
+                  <p>{save.error.message}</p>
+                  <Button asChild variant="outline" className="mt-2">
+                    <Link
+                      to={`/customers/${save.error.existingCustomer.id}`}
+                      onClick={() => setEditing(null)}
+                    >
+                      View existing customer
+                    </Link>
+                  </Button>
+                </div>
+              )}
               <Button
                 className="mt-5 w-full"
-                disabled={!name.trim() || !emailValid || save.isPending}
+                disabled={
+                  !name.trim() || !emailValid || !!phoneError || save.isPending
+                }
                 onClick={() => save.mutate()}
               >
                 Save customer
-              </Button>
-            </div>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
-      <Drawer.Root
-        open={!!payment}
-        onOpenChange={(v) => !v && setPayment(null)}
-      >
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
-          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl bg-white p-5">
-            <div className="mx-auto max-w-lg">
-              <Drawer.Title className="text-lg font-semibold">
-                Receive payment from {payment?.name}
-              </Drawer.Title>
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Current due ৳{payment?.totalDue.toLocaleString()}
-              </p>
-              <Input
-                className="mt-4"
-                type="number"
-                min="0.01"
-                max={payment?.totalDue}
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(Number(e.target.value))}
-              />
-              <p className="mt-4 text-sm font-medium">Payment method</p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {(
-                  [
-                    ["CASH", "Cash"],
-                    ["BANK", "Bank"],
-                    ["MOBILE_BANKING", "Mobile Banking"],
-                    ["OTHER", "Other"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    type="button"
-                    key={value}
-                    onClick={() => setPaymentMethod(value)}
-                    className={`min-h-11 rounded-xl border px-3 text-sm ${paymentMethod === value ? "border-[var(--accent)] bg-[var(--surface-warm)]" : "border-[var(--border)]"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <Input
-                className="mt-3"
-                placeholder="Notes (optional)"
-                value={paymentNotes}
-                onChange={(e) => setPaymentNotes(e.target.value)}
-              />
-              <Button
-                className="mt-4 w-full"
-                disabled={amount <= 0 || pay.isPending}
-                onClick={() => pay.mutate()}
-              >
-                Receive ৳{amount.toLocaleString()}
               </Button>
             </div>
           </Drawer.Content>
@@ -376,6 +429,7 @@ export function ContainersPage() {
   const [params] = useSearchParams();
   const qc = useQueryClient();
   const [search, setSearch] = useState(params.get("search") ?? "");
+  const [stockFilter, setStockFilter] = useState("all");
   const [edit, setEdit] = useState<ContainerSummary | null>(null);
   const [confirm, setConfirm] = useState<ContainerSummary | null>(null);
   const [number, setNumber] = useState("");
@@ -403,81 +457,279 @@ export function ContainersPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const rows = (q.data ?? []).filter((c) =>
+    stockFilter === "stock"
+      ? c.totalRolls > 0 || c.totalMeters > 0
+      : stockFilter === "empty"
+        ? c.totalRolls <= 0 && c.totalMeters <= 0
+        : true,
+  );
+  const actions = (c: ContainerSummary) => (
+    <div className="customer-row-actions">
+      <Button
+        variant="outline"
+        className="text-xs"
+        onClick={() => {
+          save.reset();
+          setEdit(c);
+          setNumber(c.containerNumber);
+          setNotes(c.notes ?? "");
+        }}
+      >
+        Edit
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={`Archive container ${c.containerNumber}`}
+        onClick={() => setConfirm(c)}
+      >
+        <Trash2 className="size-4" />
+      </Button>
+    </div>
+  );
+  const documents = (c: ContainerSummary) =>
+    c.documents?.length ? (
+      <details className="compact-documents">
+        <summary>Source documents ({c.documents.length})</summary>
+        {c.documents.map((document) => (
+          <SourceDocument key={document.id} document={document} />
+        ))}
+      </details>
+    ) : null;
+  const received = (c: ContainerSummary) =>
+    c.receivedAt
+      ? new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Asia/Dhaka",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }).format(new Date(c.receivedAt))
+      : "Not received yet";
   return (
     <Page>
-      <Title
-        icon={Container}
-        title="Containers"
-        subtitle="Shipment history and remaining stock."
-      />
-      <SearchBox
-        value={search}
-        onChange={setSearch}
-        placeholder="Search container, supplier or item..."
-      />
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {q.data?.map((c) => (
-          <article
-            key={c.id}
-            className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)] transition hover:border-[var(--primary-border)]"
-          >
-            <div className="flex justify-between">
-              <div>
-                <h2 className="font-semibold">{c.containerNumber}</h2>
-                <p className="text-sm text-[var(--muted)]">{c.supplierName}</p>
-              </div>
-              <div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => {
-                    setEdit(c);
-                    setNumber(c.containerNumber);
-                    setNotes(c.notes ?? "");
-                  }}
-                >
-                  <Edit3 className="size-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="text-[var(--danger)]"
-                  onClick={() => setConfirm(c)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-3 rounded-xl bg-[var(--surface-subtle)] p-3 text-center text-xs">
-              <span>{c.totalItems} Items</span>
-              <span>{c.totalRolls} Rolls</span>
-              <span>{c.totalMeters} Meter</span>
-            </div>
-            {c.documents?.map(document => <SourceDocument key={document.id} document={document} />)}
-          </article>
-        ))}
+      <header className="customers-header">
+        <div>
+          <p className="customers-eyebrow">Afia Leather · Shipments & stock</p>
+          <h1>Containers</h1>
+          <p>Container records, suppliers and remaining stock.</p>
+        </div>
+        <Button asChild>
+          <Link to="/purchases/new">
+            <Plus className="size-4" />
+            Receive Purchase
+          </Link>
+        </Button>
+      </header>
+      <div className="customers-toolbar">
+        <label className="customers-search">
+          <span className="sr-only">
+            Search container, supplier or item code
+          </span>
+          <Search className="size-4" aria-hidden="true" />
+          <Input
+            type="search"
+            maxLength={200}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Container, supplier or item code…"
+          />
+        </label>
+        <div
+          className="customers-filters"
+          role="group"
+          aria-label="Container stock filter"
+        >
+          {[
+            ["all", "All Containers"],
+            ["stock", "In Stock"],
+            ["empty", "Empty"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              aria-pressed={stockFilter === value}
+              onClick={() => setStockFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
+      <section
+        className="customers-directory compact-directory"
+        aria-label="Container records"
+        aria-busy={q.isFetching}
+      >
+        {q.isError ? (
+          <LedgerError
+            message={q.error.message}
+            retry={() => void q.refetch()}
+          />
+        ) : q.isPending ? (
+          <LedgerLoading />
+        ) : !rows.length ? (
+          <div className="customers-empty">
+            <h2>No containers found</h2>
+            <p>
+              {search || stockFilter !== "all"
+                ? "Try another search or show all containers."
+                : "Receive a purchase to record a container and its stock."}
+            </p>
+            {search || stockFilter !== "all" ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearch("");
+                  setStockFilter("all");
+                }}
+              >
+                Clear Filters
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link to="/purchases/new">Receive Purchase</Link>
+              </Button>
+            )}
+          </div>
+        ) : (
+          <>
+            <table className="customers-table compact-containers-table">
+              <caption className="sr-only">
+                Container suppliers and remaining Rolls and Meter
+              </caption>
+              <thead>
+                <tr>
+                  {[
+                    "Container",
+                    "Supplier",
+                    "Items",
+                    "Rolls",
+                    "Meter",
+                    "Actions",
+                  ].map((label) => (
+                    <th key={label} scope="col">
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <strong className="customer-name">
+                        {c.containerNumber}
+                      </strong>
+                      <p className="customer-contact">{received(c)}</p>
+                      <span className="compact-status">
+                        {c.status.replaceAll("_", " ")}
+                      </span>
+                      {c.notes && <p className="customer-address">{c.notes}</p>}
+                      {documents(c)}
+                    </td>
+                    <td>{c.supplierName}</td>
+                    <td className="customer-amount">{c.totalItems}</td>
+                    <td className="customer-amount">
+                      <strong>{c.totalRolls.toLocaleString()}</strong>
+                    </td>
+                    <td className="customer-amount">
+                      {c.totalMeters.toLocaleString()}
+                    </td>
+                    <td>{actions(c)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="customers-mobile">
+              {rows.map((c) => (
+                <article key={c.id}>
+                  <div className="customer-mobile-heading">
+                    <div>
+                      <h2 className="customer-name">{c.containerNumber}</h2>
+                      <p className="customer-contact">{c.supplierName}</p>
+                    </div>
+                    <span className="compact-status">
+                      {c.status.replaceAll("_", " ")}
+                    </span>
+                  </div>
+                  <p className="customer-contact">{received(c)}</p>
+                  <dl className="customer-mobile-money">
+                    <div>
+                      <dt>Items</dt>
+                      <dd>{c.totalItems}</dd>
+                    </div>
+                    <div>
+                      <dt>Rolls</dt>
+                      <dd>{c.totalRolls.toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>Meter</dt>
+                      <dd>{c.totalMeters.toLocaleString()}</dd>
+                    </div>
+                  </dl>
+                  {c.notes && (
+                    <p className="customer-address mb-3">{c.notes}</p>
+                  )}
+                  {actions(c)}
+                  {documents(c)}
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+        {q.isSuccess && (
+          <footer className="customers-list-footer">
+            <span>
+              {rows.length} containers shown{q.isFetching ? " · Updating…" : ""}
+            </span>
+            <span>Search to find more · Up to 50 results</span>
+          </footer>
+        )}
+      </section>
       <Drawer.Root open={!!edit} onOpenChange={(v) => !v && setEdit(null)}>
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
-          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl bg-white p-5">
+          <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-lg bg-[var(--surface)] p-5">
             <div className="mx-auto max-w-lg">
               <Drawer.Title className="text-lg font-semibold">
                 Edit container
               </Drawer.Title>
-              <Input
-                className="mt-4"
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-              />
-              <Input
-                className="mt-3"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-              <Button className="mt-4 w-full" onClick={() => save.mutate()}>
-                Save changes
-              </Button>
+              <label className="mt-4 block text-sm font-medium">
+                Container Number *
+                <Input
+                  className="mt-2"
+                  value={number}
+                  onChange={(e) => setNumber(e.target.value)}
+                />
+              </label>
+              <label className="mt-4 block text-sm font-medium">
+                Note (optional)
+                <Input
+                  className="mt-2"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </label>
+              {save.error && (
+                <p role="alert" className="mt-3 text-sm text-[var(--danger)]">
+                  {save.error.message}
+                </p>
+              )}
+              <div className="mt-5 flex gap-3">
+                <Button
+                  disabled={!number.trim() || save.isPending}
+                  onClick={() => save.mutate()}
+                >
+                  {save.isPending ? "Saving…" : "Save Changes"}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={save.isPending}
+                  onClick={() => setEdit(null)}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </Drawer.Content>
         </Drawer.Portal>

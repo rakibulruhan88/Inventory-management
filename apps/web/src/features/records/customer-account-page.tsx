@@ -14,9 +14,22 @@ import {
   SalesLedger,
 } from "@/features/sales/ledger-components";
 
-function PaymentHistoryRows({ rows }: { rows: PaymentHistory[] }) {
+function PaymentHistoryRows({
+  rows,
+  customerId,
+}: {
+  rows: PaymentHistory[];
+  customerId: string;
+}) {
   const invoice = (p: PaymentHistory) =>
-    p.saleId && p.invoiceNumber ? (
+    p.receiptId ? (
+      <Link
+        className={ledgerLink}
+        to={`/customers/${customerId}/receipts/${p.receiptId}`}
+      >
+        {p.receiptNumber}
+      </Link>
+    ) : p.saleId && p.invoiceNumber ? (
       <Link className={ledgerLink} to={`/sales/${p.saleId}/invoice`}>
         {p.invoiceNumber}
       </Link>
@@ -34,7 +47,7 @@ function PaymentHistoryRows({ rows }: { rows: PaymentHistory[] }) {
               "Amount",
               "Method",
               "Reference",
-              "Related Invoice",
+              "Receipt / Invoice",
               "Notes",
             ].map((label) => (
               <th
@@ -58,7 +71,25 @@ function PaymentHistoryRows({ rows }: { rows: PaymentHistory[] }) {
               </td>
               <td className="px-4 py-3">{p.method.replaceAll("_", " ")}</td>
               <td className="break-words px-4 py-3">{p.reference || "—"}</td>
-              <td className="break-words px-4 py-3">{invoice(p)}</td>
+              <td className="break-words px-4 py-3">
+                {invoice(p)}
+                {!p.receiptId && (
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Earlier Payment
+                  </p>
+                )}
+                {p.allocations && (
+                  <details className="mt-1 text-xs">
+                    <summary className="cursor-pointer">Paid Against</summary>
+                    {p.allocations.map((a) => (
+                      <p className="mt-1" key={a.saleId ?? a.openingBalanceId}>
+                        {a.invoiceNumber ?? "Opening Due"} →{" "}
+                        {formatMoney(a.amount)}
+                      </p>
+                    ))}
+                  </details>
+                )}
+              </td>
               <td className="break-words px-4 py-3">{p.notes || "—"}</td>
             </tr>
           ))}
@@ -79,7 +110,14 @@ function PaymentHistoryRows({ rows }: { rows: PaymentHistory[] }) {
             <p className="mt-1 text-xs text-[var(--muted)]">
               {p.method.replaceAll("_", " ")}
             </p>
-            <div className="mt-2 text-xs">Invoice: {invoice(p)}</div>
+            <div className="mt-2 text-xs">
+              {p.receiptId ? "Receipt" : "Earlier Payment"}: {invoice(p)}
+            </div>
+            {p.allocations?.map((a) => (
+              <p key={a.saleId ?? a.openingBalanceId} className="mt-1 text-xs">
+                {a.invoiceNumber ?? "Opening Due"} → {formatMoney(a.amount)}
+              </p>
+            ))}
             {p.reference && (
               <p className="mt-1 break-words text-xs">
                 Reference: {p.reference}
@@ -144,9 +182,7 @@ export function CustomerDetailPage() {
       ) : (
         <>
           <header className="mt-3">
-            <p className="text-xs text-[var(--muted)]">
-              Customer account · Read-only
-            </p>
+            <p className="text-xs text-[var(--muted)]">Customer account</p>
             <h1 className="mt-1 break-words text-2xl font-semibold tracking-tight">
               {c.name}
             </h1>
@@ -160,12 +196,29 @@ export function CustomerDetailPage() {
                 {c.address}
               </p>
             )}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {c.totalDue > 0 ? (
+                <Button asChild>
+                  <Link to={`/customers/${id}/receive-payment`}>
+                    Receive Payment
+                  </Link>
+                </Button>
+              ) : (
+                <Button disabled>No due to pay</Button>
+              )}
+              {!c.openingDue && (
+                <Button asChild variant="outline">
+                  <Link to={`/customers/${id}/opening-due`}>Add Old Due</Link>
+                </Button>
+              )}
+            </div>
           </header>
-          <dl className="mt-5 grid divide-y divide-[var(--border)] rounded-md border border-[var(--border)] bg-[var(--surface)] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <dl className="mt-5 grid divide-y divide-[var(--border)] rounded-md border border-[var(--border)] bg-[var(--surface)] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
             {[
-              ["Total Sales", c.totalSales],
-              ["Total Paid", c.totalPaid],
-              ["Customer Outstanding", c.totalDue],
+              ["Opening Due", c.openingDue?.originalAmount ?? 0],
+              ["Sales", c.totalSales],
+              ["Payments Received", c.totalPaid],
+              ["Total Due", c.totalDue],
             ].map(([label, value]) => (
               <div
                 key={label}
@@ -178,11 +231,29 @@ export function CustomerDetailPage() {
               </div>
             ))}
           </dl>
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            Account totals cover all completed invoices. Invoice Due is the
-            balance of one invoice; Customer Outstanding is the full account
-            balance.
-          </p>
+          {c.openingDue && (
+            <section
+              aria-label="Opening Due history"
+              className="mt-5 border-y border-[var(--border)] py-4 text-sm"
+            >
+              <h2 className="font-semibold">Account History · Opening Due</h2>
+              <div className="mt-2 flex flex-wrap justify-between gap-2">
+                <span>
+                  {formatLedgerDate(c.openingDue.balanceAsOf)} · Opening Due
+                </span>
+                <strong>{formatMoney(c.openingDue.originalAmount)}</strong>
+              </div>
+              <div className="mt-2 flex flex-wrap justify-between gap-2 text-[var(--muted)]">
+                <span>Paid {formatMoney(c.openingDue.paidAmount)}</span>
+                <span>Due Left {formatMoney(c.openingDue.remainingDue)}</span>
+              </div>
+              {c.openingDue.note && (
+                <p className="mt-2 break-words text-[var(--muted)]">
+                  {c.openingDue.note}
+                </p>
+              )}
+            </section>
+          )}
           <nav
             aria-label="Customer history"
             className="mt-6 flex flex-wrap gap-1 border-b border-[var(--border)]"
@@ -210,10 +281,10 @@ export function CustomerDetailPage() {
             </h2>
             <p className="mt-1 text-xs text-[var(--muted)]">
               {tab === "outstanding"
-                ? "Completed invoices with a remaining balance. Original totals and recorded payments are shown below."
+                ? "Invoices with due left."
                 : tab === "payments"
-                  ? "Existing non-voided payment records, including their invoice links when known. A receipt applied across invoices appears as separate records."
-                  : "All invoices, newest sale date first. Voided invoices do not contribute to Customer Outstanding."}
+                  ? "Payments received for old due and invoices."
+                  : "All sales, newest first."}
             </p>
           </div>
           <section
@@ -223,7 +294,7 @@ export function CustomerDetailPage() {
           >
             {data!.items.length ? (
               tab === "payments" ? (
-                <PaymentHistoryRows rows={c.payments.items} />
+                <PaymentHistoryRows rows={c.payments.items} customerId={id} />
               ) : (
                 <SalesLedger
                   rows={
@@ -239,7 +310,7 @@ export function CustomerDetailPage() {
               <div className="p-5">
                 <h3 className="text-sm font-semibold">
                   {tab === "outstanding"
-                    ? "No outstanding invoices"
+                    ? "No invoice due"
                     : tab === "payments"
                       ? "No payment records"
                       : "No sales recorded"}

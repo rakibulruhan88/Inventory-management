@@ -1,424 +1,92 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { HelpCircle, LoaderCircle, LockKeyhole, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useForm, useWatch } from "react-hook-form";
+import { useEffect, useRef, useState } from "react";
+import { useForm, useWatch, type FieldErrors } from "react-hook-form";
+import { useSearchParams } from "react-router-dom";
+import { Check, ChevronRight, Save, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  changePassword,
-  getAccount,
-  getSettings,
-  updateAccount,
-  updateSettings,
-} from "@/lib/api";
-import { SignOutButton } from "@/features/auth/auth";
-const schema = z.object({
-  storeName: z.string().min(1),
-  logoUrl: z.string().nullable(),
-  faviconUrl: z.string().nullable(),
-  storePhone: z.string().nullable(),
-  storeEmail: z.union([z.email(), z.literal("")]).nullable(),
-  storeAddress: z.string().nullable(),
-  currency: z.literal("BDT"),
-  currencySymbol: z.string(),
-  invoicePrefix: z.string().min(1),
-  defaultPaymentMethod: z.enum(["CASH", "BANK", "MOBILE_BANKING", "OTHER"]),
-  lowStockRollThreshold: z.number().int().min(0),
-  lowStockMeterThreshold: z.number().min(0),
-  brandAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-});
-type FormData = z.infer<typeof schema>;
+import { getSettings, updateSettings } from "@/lib/api";
+import { AccountSettings, SettingsSignOut } from "./account-settings";
+import { AppSettings } from "./app-settings";
+import { SaveStatus, SettingsLoading, SettingsRetry, StorePreview } from "./settings-components";
+import { StoreSettingsPanels } from "./settings-store-panels";
+import { settingsSchema, settingsSections, type SettingsFormData, type SettingsSectionId } from "./settings-model";
+import "./settings.css";
+
 export function SettingsPage() {
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const section: SettingsSectionId = settingsSections.find((item) => item.id === params.get("section"))?.id ?? "business";
+  const active = settingsSections.find((item) => item.id === section)!;
+  const storeSection = !["account", "app"].includes(section);
   const query = useQuery({ queryKey: ["settings"], queryFn: getSettings });
-  const form = useForm<FormData>({ resolver: zodResolver(schema) });
+  const form = useForm<SettingsFormData>({ resolver: zodResolver(settingsSchema), mode: "onBlur" });
   const watched = useWatch({ control: form.control });
+  const dirty = form.formState.isDirty;
+  const dirtyFields = form.formState.dirtyFields;
+  const [accountDirty, setAccountDirty] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [focusField, setFocusField] = useState<keyof SettingsFormData | null>(null);
+  const initialized = useRef(false);
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (query.data) form.reset(query.data as FormData);
-  }, [query.data, form]);
-  const save = useMutation({
-    mutationFn: updateSettings,
-    onSuccess: async (x) => {
-      await qc.invalidateQueries({ queryKey: ["settings"] });
-      document.documentElement.style.setProperty(
-        "--brand-accent",
-        x.brandAccent,
-      );
-      toast.success("Settings saved");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  const image = (field: "logoUrl" | "faviconUrl", files: FileList | null) => {
-    const file = files?.[0];
-    if (!file) return;
-    if (
-      !["image/png", "image/jpeg", "image/x-icon"].includes(file.type) ||
-      file.size > 150_000
-    ) {
-      toast.error("Choose a PNG, JPG or ICO image under 150 KB.");
-      return;
+    // Background refetches must not overwrite changes being edited.
+    if (query.data && (!initialized.current || !dirty)) {
+      form.reset(query.data as SettingsFormData);
+      initialized.current = true;
     }
-    const reader = new FileReader();
-    reader.onload = () =>
-      form.setValue(field, String(reader.result), { shouldDirty: true });
-    reader.readAsDataURL(file);
+  }, [query.data, dirty, form]);
+  useEffect(() => {
+    if (!dirty && !accountDirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, accountDirty]);
+  useEffect(() => {
+    if (!focusField) return;
+    if (focusField === "logoUrl" || focusField === "faviconUrl") sectionHeading.current?.focus();
+    else form.setFocus(focusField);
+    setFocusField(null);
+  }, [focusField, section, form]);
+  const save = useMutation({ mutationFn: updateSettings, onSuccess: (result) => {
+    qc.setQueryData(["settings"], result);
+    form.reset(result as SettingsFormData);
+    document.documentElement.style.setProperty("--brand-accent", result.brandAccent);
+    setSavedAt(Date.now());
+    void qc.invalidateQueries({ queryKey: ["inventory"] });
+    void qc.invalidateQueries({ queryKey: ["inventory-summary"] });
+    toast.success("Store settings saved");
+  }, onError: (error: Error) => toast.error(error.message) });
+  const chooseSection = (id: SettingsSectionId) => { const next = new URLSearchParams(params); next.set("section", id); setParams(next, { replace: true }); };
+  const onInvalid = (errors: FieldErrors<SettingsFormData>) => {
+    const first = Object.keys(errors)[0] as keyof SettingsFormData;
+    const target = settingsSections.find((item) => (item.fields as readonly string[]).includes(first));
+    if (target) chooseSection(target.id);
+    setFocusField(first);
+    toast.error("Review the highlighted settings before saving.");
   };
-  if (query.isLoading)
-    return (
-      <div className="grid min-h-80 place-items-center">
-        <LoaderCircle className="animate-spin" />
-      </div>
-    );
-  return (
-    <div className="mx-auto max-w-4xl px-4 pb-28 pt-6 md:px-7 lg:px-10">
-      <div className="flex gap-4">
-        <span className="grid size-11 place-items-center rounded-xl bg-[var(--surface-warm)] text-[var(--accent)]">
-          <Settings className="size-5" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold sm:text-3xl">Settings</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Store details, invoices and stock alerts.
-          </p>
-        </div>
-      </div>
-      <form
-        className="mt-7 space-y-5"
-        onSubmit={form.handleSubmit((v) => save.mutate(v))}
-      >
-        <Section title="Business / Store">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Store name">
-              <Input {...form.register("storeName")} />
-            </Field>
-            <Field label="Phone">
-              <Input {...form.register("storePhone")} />
-            </Field>
-            <Field label="Email">
-              <Input type="email" {...form.register("storeEmail")} />
-            </Field>
-            <Field label="Address">
-              <Input {...form.register("storeAddress")} />
-            </Field>
-            <ImageField
-              label="Store logo"
-              preview={watched.logoUrl}
-              onChange={(f) => image("logoUrl", f)}
-            />
-            <ImageField
-              label="Browser favicon"
-              preview={watched.faviconUrl}
-              onChange={(f) => image("faviconUrl", f)}
-            />
-          </div>
-        </Section>
-        <Section title="Invoice / Sales">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Currency">
-              <Input value="BDT / ৳" disabled />
-            </Field>
-            <Field label="Invoice prefix">
-              <Input {...form.register("invoicePrefix")} />
-            </Field>
-            <Field label="Default payment method">
-              <SearchablePickerSimple
-                value={watched.defaultPaymentMethod ?? "CASH"}
-                onChange={(v) =>
-                  form.setValue(
-                    "defaultPaymentMethod",
-                    v as FormData["defaultPaymentMethod"],
-                  )
-                }
-              />
-            </Field>
-          </div>
-        </Section>
-        <Section title="Inventory">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Low stock Roll threshold">
-              <Input
-                type="number"
-                min="0"
-                {...form.register("lowStockRollThreshold", {
-                  valueAsNumber: true,
-                })}
-              />
-            </Field>
-            <Field label="Low stock Meter threshold">
-              <Input
-                type="number"
-                min="0"
-                {...form.register("lowStockMeterThreshold", {
-                  valueAsNumber: true,
-                })}
-              />
-            </Field>
-          </div>
-        </Section>
-        <Section title="Appearance">
-          <Field label="Logo / brand accent">
-            <div className="flex gap-2">
-              <span
-                className="size-11 rounded-xl border"
-                style={{ background: watched.brandAccent }}
-              />
-              <Input {...form.register("brandAccent")} />
-            </div>
-            <p className="mt-2 text-xs text-[var(--muted)]">
-              Used for your brand identity. Application controls use the
-              accessible blue system palette.
-            </p>
-          </Field>
-        </Section>
-        <Section title="Install on iPhone">
-          <div className="flex gap-3 text-sm text-[var(--ink-soft)]">
-            <HelpCircle className="mt-0.5 size-5 shrink-0 text-[var(--accent)]" />
-            <ol className="list-decimal space-y-1 pl-4">
-              <li>Open Afia Leather in Safari.</li>
-              <li>Tap the Share button.</li>
-              <li>Choose Add to Home Screen.</li>
-              <li>Tap Add.</li>
-            </ol>
-          </div>
-        </Section>
-        <Button className="w-full sm:w-auto" disabled={save.isPending}>
-          {save.isPending && <LoaderCircle className="size-4 animate-spin" />}{" "}
-          Save settings
-        </Button>
-        <div className="max-w-xs lg:hidden">
-          <SignOutButton />
-        </div>
-      </form>
-      <AccountSettings />
-    </div>
-  );
-}
+  const discard = () => { if (query.data) form.reset(query.data as SettingsFormData); save.reset(); };
+  const changedSections = settingsSections.filter((item) => item.fields.some((field) => dirtyFields[field])).length;
 
-function AccountSettings() {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const account = useQuery({ queryKey: ["account"], queryFn: getAccount });
-  const [email, setEmail] = useState<string | null>(null);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const emailMutation = useMutation({
-    mutationFn: updateAccount,
-    onSuccess: async (result) => {
-      setEmail(result.email ?? "");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["account"] }),
-        queryClient.invalidateQueries({ queryKey: ["auth"] }),
-      ]);
-      toast.success("Login email updated");
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-  const passwordMutation = useMutation({
-    mutationFn: changePassword,
-    onSuccess: () => {
-      toast.success("Password changed. Please sign in with your new password.");
-      queryClient.setQueryData(["auth"], null);
-      window.setTimeout(() => navigate("/login", { replace: true }), 700);
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-  const submitPassword = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (newPassword.length < 8) {
-      toast.error("New password must be at least 8 characters.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error("New passwords do not match.");
-      return;
-    }
-    passwordMutation.mutate({ currentPassword, newPassword });
-  };
-  return (
-    <section className="mt-5 rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5">
-      <div className="flex items-center gap-2">
-        <LockKeyhole className="size-5 text-[var(--accent)]" />
-        <h2 className="font-semibold">Account &amp; Security</h2>
+  return <div className="settings-page">
+    <header className="settings-page-header"><div><p className="settings-eyebrow">AFIA LEATHER / PREFERENCES</p><h1>Settings</h1><p>Your store, your defaults, your account.</p></div><span className={`settings-header-status ${dirty || accountDirty ? "pending" : ""}`}><i />{dirty || accountDirty ? "Changes pending" : "Store preferences"}</span></header>
+    <div className="settings-workspace"><aside className="settings-sidebar"><div className="settings-sidebar-caption">WORKSPACE SETTINGS</div><nav aria-label="Settings sections">{settingsSections.map(({ id, title, description, icon: Icon, fields }) => {
+      const changed = fields.some((field) => dirtyFields[field]) || (id === "account" && accountDirty);
+      const errors = fields.some((field) => form.formState.errors[field]);
+      return <button type="button" key={id} className={section === id ? "active" : ""} aria-current={section === id ? "page" : undefined} onClick={() => chooseSection(id)}><Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{description}</small></span>{errors ? <i className="settings-section-dot error" aria-label="Has validation errors" /> : changed ? <i className="settings-section-dot" aria-label="Has unsaved changes" /> : <ChevronRight size={13} aria-hidden="true" />}</button>;
+    })}</nav><div className="settings-sidebar-note"><Check size={16} aria-hidden="true" /><p>Store settings are shared across your workspace. Account changes apply to your login.</p></div></aside>
+      <div className="settings-content"><div className="settings-section-heading"><div><p>Preferences / {active.title}</p><h2 ref={sectionHeading} tabIndex={-1}>{active.title}</h2></div>{storeSection && <span className="settings-edit-tag">{dirty ? `${changedSections} ${changedSections === 1 ? "section" : "sections"} changed` : "Store settings"}</span>}</div>
+        <div className={`settings-content-grid ${!storeSection ? "wide" : ""}`}><div className="settings-edit-content">
+          <form id="store-settings-form" noValidate onSubmit={form.handleSubmit((values) => { if (!save.isPending && dirty) save.mutate(values); }, onInvalid)}>
+            {storeSection && (query.isError ? <SettingsRetry message={query.error.message} retry={() => void query.refetch()} busy={query.isFetching} /> : query.isPending || !initialized.current ? <SettingsLoading /> : <fieldset disabled={save.isPending}><StoreSettingsPanels section={section} form={form} watched={watched} busy={save.isPending} /></fieldset>)}
+          </form>
+          <div hidden={section !== "account"}><AccountSettings active={section === "account"} storeDirty={dirty} onDirtyChange={setAccountDirty} />{section === "account" && <SettingsSignOut dirty={dirty || accountDirty} />}</div>
+          <div hidden={section !== "app"}>{section === "app" && <AppSettings dirty={dirty || accountDirty} />}</div>
+          {save.isError && <div className="settings-save-error" role="alert"><strong>Store settings could not be saved</strong><p>{save.error.message}</p><span>Your edits are still here. Try saving again.</span></div>}
+        </div>{storeSection && query.data && !query.isError && <StorePreview values={watched} dirty={dirty} />}</div>
+        {(storeSection || dirty) && query.data && !query.isError && <div className="settings-save-bar"><SaveStatus dirty={dirty} saving={save.isPending} savedAt={savedAt} /><div><Button type="button" variant="outline" onClick={discard} disabled={!dirty || save.isPending}><RotateCcw size={14} aria-hidden="true" />Discard</Button><Button type="submit" form="store-settings-form" disabled={!dirty || save.isPending}><Save size={15} aria-hidden="true" />{save.isPending ? "Saving…" : "Save store settings"}</Button></div></div>}
       </div>
-      <div className="mt-4 grid gap-5 md:grid-cols-2">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            emailMutation.mutate({
-              email: (email ?? account.data?.email ?? "").trim().toLowerCase(),
-            });
-          }}
-          className="rounded-xl bg-[var(--surface-subtle)] p-4"
-        >
-          <Field label="Username">
-            <Input value={account.data?.username ?? ""} disabled />
-          </Field>
-          <div className="mt-4">
-            <Field label="Email">
-              <Input
-                type="email"
-                autoComplete="email"
-                placeholder="owner@example.com"
-                value={email ?? account.data?.email ?? ""}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </Field>
-          </div>
-          <Button
-            className="mt-4 w-full sm:w-auto"
-            disabled={emailMutation.isPending}
-          >
-            {emailMutation.isPending && (
-              <LoaderCircle className="size-4 animate-spin" />
-            )}
-            Update Email
-          </Button>
-        </form>
-        <form
-          onSubmit={submitPassword}
-          className="rounded-xl bg-[var(--surface-subtle)] p-4"
-        >
-          <Field label="Current Password *">
-            <Input
-              type="password"
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-            />
-          </Field>
-          <div className="mt-4">
-            <Field label="New Password *">
-              <Input
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-              />
-            </Field>
-          </div>
-          <div className="mt-4">
-            <Field label="Confirm New Password *">
-              <Input
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-              />
-            </Field>
-          </div>
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            Use at least 8 characters.
-          </p>
-          <Button
-            className="mt-4 w-full sm:w-auto"
-            disabled={
-              passwordMutation.isPending ||
-              !currentPassword ||
-              newPassword.length < 8 ||
-              !confirmPassword
-            }
-          >
-            {passwordMutation.isPending && (
-              <LoaderCircle className="size-4 animate-spin" />
-            )}
-            Change Password
-          </Button>
-        </form>
-      </div>
-    </section>
-  );
-}
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5">
-      <h2 className="font-semibold">{title}</h2>
-      <div className="mt-4">{children}</div>
-    </section>
-  );
-}
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="text-sm font-medium">
-      <span className="mb-2 block">{label}</span>
-      {children}
-    </label>
-  );
-}
-function ImageField({
-  label,
-  preview,
-  onChange,
-}: {
-  label: string;
-  preview?: string | null;
-  onChange: (f: FileList | null) => void;
-}) {
-  return (
-    <Field label={label}>
-      <div className="flex items-center gap-3">
-        {preview ? (
-          <img
-            src={preview}
-            className="size-12 rounded-xl border object-contain"
-          />
-        ) : (
-          <span className="grid size-12 place-items-center rounded-xl bg-[var(--surface-warm)] font-bold text-[var(--accent)]">
-            A
-          </span>
-        )}
-        <Input
-          type="file"
-          accept="image/png,image/jpeg,image/x-icon"
-          onChange={(e) => onChange(e.target.files)}
-        />
-      </div>
-    </Field>
-  );
-}
-function SearchablePickerSimple({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const opts = [
-    ["CASH", "Cash"],
-    ["BANK", "Bank"],
-    ["MOBILE_BANKING", "Mobile banking"],
-    ["OTHER", "Other"],
-  ];
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {opts.map(([v, l]) => (
-        <button
-          type="button"
-          key={v}
-          onClick={() => onChange(v)}
-          className={`min-h-11 rounded-xl border px-3 text-sm ${value === v ? "border-[var(--accent)] bg-[var(--surface-warm)]" : "border-[var(--border)]"}`}
-        >
-          {l}
-        </button>
-      ))}
     </div>
-  );
+  </div>;
 }

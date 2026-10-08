@@ -71,6 +71,10 @@ enum AuditAction {
   PURCHASE_REVERSED
   STOCK_ADJUSTED
   PAYMENT_RECEIVED
+  CUSTOMER_PAYMENT_RECEIVED
+  CUSTOMER_OPENING_BALANCE_CREATED
+  FINANCIAL_ENTRY_CREATED
+  FINANCIAL_ENTRY_VOIDED
 }
 
 model User {
@@ -84,12 +88,17 @@ model User {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  financialEntries FinancialEntry[] @relation("FinanceCreator")
+  voidedFinancialEntries FinancialEntry[] @relation("FinanceVoider")
+  paymentReceipts CustomerPaymentReceipt[]
+  openingBalances CustomerOpeningBalance[]
   auditLogs    AuditLog[]
   invoiceImports InvoiceImportDraft[]
   purchaseDocuments PurchaseDocument[]
 }
 
 model Supplier {
+  financialEntries FinancialEntry[]
   id         String      @id @default(cuid())
   name       String
   phone      String?
@@ -112,12 +121,15 @@ model Customer {
   id         String    @id @default(cuid())
   name       String
   phone      String?
+  normalizedPhone String? @unique
   email      String?
   address    String?
   searchText String    @default("")
   archivedAt DateTime?
   sales      Sale[]
   payments   Payment[]
+  paymentReceipts CustomerPaymentReceipt[]
+  openingBalance CustomerOpeningBalance?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
@@ -127,6 +139,7 @@ model Customer {
 }
 
 model Container {
+  financialEntries FinancialEntry[]
   id                        String          @id @default(cuid())
   containerNumber           String
   normalizedContainerNumber String          @unique
@@ -227,6 +240,7 @@ model Roll {
 }
 
 model Purchase {
+  financialEntries FinancialEntry[]
   id             String         @id @default(cuid())
   purchaseNumber String         @unique
   supplierId     String
@@ -277,6 +291,9 @@ model Sale {
   soldAt        DateTime   @default(now())
   totalAmount   Decimal    @default(0) @db.Decimal(14, 2)
   paidAmount    Decimal    @default(0) @db.Decimal(14, 2)
+  previousOutstandingBeforeSale Decimal? @db.Decimal(14, 2)
+  outstandingAfterSale Decimal? @db.Decimal(14, 2)
+  paymentAllocations CustomerPaymentAllocation[]
   discountAmount Decimal  @default(0) @db.Decimal(14, 2)
   receivedAmount Decimal  @default(0) @db.Decimal(14, 2)
   changeAmount   Decimal  @default(0) @db.Decimal(14, 2)
@@ -314,6 +331,8 @@ model SaleLine {
   meterSold    Decimal              @db.Decimal(12, 2)
   ratePerMeter Decimal?             @db.Decimal(12, 2)
   discount     Decimal              @default(0) @db.Decimal(14, 2)
+  /// Null for historical manual-amount sales; never inferred.
+  unitPricePerRoll Decimal?         @db.Decimal(14, 2)
   lineTotal    Decimal              @db.Decimal(14, 2)
   itemCodeSnapshot String?
   itemNameSnapshot String?
@@ -382,6 +401,8 @@ model SaleRollAllocation {
 }
 
 model Payment {
+  /// Explicit origin for new writes; null means historical origin needs review.
+  cashbookType String?
   id         String        @id @default(cuid())
   customerId String
   customer   Customer      @relation(fields: [customerId], references: [id])
@@ -418,6 +439,7 @@ model AuditLog {
   entityType String
   entityId   String
   reason     String?
+  metadata   Json?
   userId     String?
   user       User?       @relation(fields: [userId], references: [id])
   createdAt  DateTime    @default(now())
@@ -539,4 +561,91 @@ model PurchaseDocument {
   uploadedById     String
   uploadedBy       User @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
   createdAt        DateTime @default(now())
+}
+
+model CustomerPaymentReceipt {
+  id String @id @default(cuid())
+  receiptNumber String @unique
+  customerId String
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  totalAmount Decimal @db.Decimal(14, 2)
+  method PaymentMethod
+  reference String?
+  notes String?
+  paidAt DateTime
+  createdBy String
+  actor User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  idempotencyKey String @unique
+  requestHash String
+  outstandingBefore Decimal @db.Decimal(14, 2)
+  outstandingAfter Decimal @db.Decimal(14, 2)
+  allocations CustomerPaymentAllocation[]
+  @@index([customerId, paidAt])
+  @@index([paidAt, createdAt, id])
+}
+
+model CustomerPaymentAllocation {
+  id String @id @default(cuid())
+  receiptId String
+  receipt CustomerPaymentReceipt @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  saleId String?
+  sale Sale? @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  openingBalanceId String?
+  openingBalance CustomerOpeningBalance? @relation(fields: [openingBalanceId], references: [id], onDelete: Restrict)
+  amount Decimal @db.Decimal(14, 2)
+  previousDue Decimal @db.Decimal(14, 2)
+  remainingDue Decimal @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  @@unique([receiptId, saleId])
+  @@unique([receiptId, openingBalanceId])
+  @@index([openingBalanceId])
+  @@index([saleId])
+}
+
+// Immutable historical debt. Remaining due is originalAmount minus receipt allocations.
+model CustomerOpeningBalance {
+  id String @id @default(cuid())
+  customerId String @unique
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  originalAmount Decimal @db.Decimal(14, 2)
+  balanceAsOf DateTime @db.Date
+  note String?
+  createdBy String
+  actor User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  idempotencyKey String @unique
+  requestHash String
+  allocations CustomerPaymentAllocation[]
+}
+
+model FinancialEntry {
+  id String @id @default(cuid())
+  direction String
+  type String
+  expenseType String?
+  amount Decimal @db.Decimal(14, 2)
+  method PaymentMethod
+  occurredAt DateTime
+  reference String?
+  note String?
+  supplierId String?
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseId String?
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  containerId String?
+  container Container? @relation(fields: [containerId], references: [id], onDelete: Restrict)
+  createdBy String
+  actor User @relation("FinanceCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  idempotencyKey String @unique
+  requestHash String
+  voidedAt DateTime?
+  voidedBy String?
+  voidActor User? @relation("FinanceVoider", fields: [voidedBy], references: [id], onDelete: Restrict)
+  voidReason String?
+  @@index([occurredAt, id])
+  @@index([supplierId])
+  @@index([purchaseId])
+  @@index([containerId])
 }

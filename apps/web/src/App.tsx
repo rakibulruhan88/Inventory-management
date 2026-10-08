@@ -1,3 +1,6 @@
+import { FinanceCreatePage } from "@/features/finance/finance-create-page";
+import { FinanceDetailPage } from "@/features/finance/finance-detail-page";
+import { CashbookPage } from "@/features/finance/cashbook-page";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState } from "react";
 import {
@@ -48,11 +51,16 @@ const ReportsPage = lazy(() =>
     default: m.ReportsPage,
   })),
 );
+const CustomerCreatePage = lazy(() => import("@/features/payments/opening-due-page").then(m => ({ default: m.CustomerCreatePage })));
 const CustomersPage = lazy(() =>
   import("@/features/records/records-pages").then((m) => ({
     default: m.CustomersPage,
   })),
 );
+const OpeningDuePage = lazy(() => import("@/features/payments/opening-due-page").then(m => ({default: m.OpeningDuePage})));
+const PaymentsPage = lazy(() => import("@/features/payments/payments-page").then(m => ({ default: m.PaymentsPage })));
+const ReceivePaymentPage = lazy(() => import("@/features/records/receive-payment-page").then(m => ({ default: m.ReceivePaymentPage })));
+const PaymentReceiptPage = lazy(() => import("@/features/records/payment-receipt-page").then(m => ({ default: m.PaymentReceiptPage })));
 const CustomerDetailPage = lazy(() =>
   import("@/features/records/customer-account-page").then((m) => ({
     default: m.CustomerDetailPage,
@@ -215,7 +223,25 @@ export default function App() {
                     path="/sales/:id/invoice"
                     element={<SaleInvoicePage />}
                   />
+                  <Route path="/cashbook" element={<CashbookPage />} />
+                  <Route path="/cashbook/money-in" element={<CashbookPage />} />
+                  <Route path="/cashbook/expenses" element={<CashbookPage />} />
+                  <Route path="/cashbook/supplier-payments" element={<CashbookPage />} />
+                  <Route path="/cashbook/money-out" element={<CashbookPage />} />
+                  <Route path="/cashbook/money-in/new" element={<FinanceCreatePage type="OTHER_IN" />} />
+                  <Route path="/cashbook/expenses/new" element={<FinanceCreatePage type="EXPENSE" />} />
+                  <Route path="/cashbook/supplier-payments/new" element={<FinanceCreatePage type="SUPPLIER_PAYMENT" />} />
+                  <Route path="/cashbook/money-out/new" element={<FinanceCreatePage type="OTHER_OUT" />} />
+                  <Route path="/cashbook/entries/:entryId" element={<FinanceDetailPage />} />
+                  <Route path="/cashbook/receive-payment" element={<PaymentsPage cashbook />} />
+                  <Route path="/cashbook/receive-payment/add-old-customer" element={<OpeningDuePage cashbook />} />
+                  <Route path="/payments" element={<PaymentsPage />} />
+                  <Route path="/payments/add-customer" element={<OpeningDuePage />} />
+                  <Route path="/customers/:id/opening-due" element={<OpeningDuePage />} />
+                  <Route path="/customers/:id/receive-payment" element={<ReceivePaymentPage />} />
+                  <Route path="/customers/:id/receipts/:receiptId" element={<PaymentReceiptPage />} />
                   <Route path="/customers" element={<CustomersPage />} />
+                  <Route path="/customers/new" element={<CustomerCreatePage />} />
                   <Route
                     path="/customers/:id"
                     element={<CustomerDetailPage />}

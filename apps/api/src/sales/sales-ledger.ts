@@ -59,6 +59,7 @@ export function ledgerDateRange(q: SalesLedgerQuery, now = new Date()) {
 const due = Prisma.sql`(s."totalAmount" - s."paidAmount")`;
 const contains = (value: string) =>
   `%${value.trim().replace(/[\\%_]/g, '\\$&')}%`;
+const receiptMatch = (term: string) => Prisma.sql`EXISTS (SELECT 1 FROM "CustomerPaymentAllocation" a JOIN "CustomerPaymentReceipt" r ON r.id = a."receiptId" WHERE a."saleId" = s.id AND (r.reference ILIKE ${contains(term)} OR r."receiptNumber" ILIKE ${contains(term)}))`;
 const productMatch = (term: string) => Prisma.sql`EXISTS (
   SELECT 1 FROM "SaleLine" l JOIN "ProductVariant" v ON v.id = l."variantId" JOIN "Product" p ON p.id = v."productId"
   WHERE l."saleId" = s.id AND (
@@ -82,7 +83,7 @@ export function ledgerWhere(q: SalesLedgerQuery, now = new Date()) {
   if (q.product?.trim()) clauses.push(productMatch(q.product));
   if (q.search?.trim())
     clauses.push(
-      Prisma.sql`(s."invoiceNumber" ILIKE ${contains(q.search)} OR c.name ILIKE ${contains(q.search)} OR c.phone ILIKE ${contains(q.search)} OR ${productMatch(q.search)} OR EXISTS (SELECT 1 FROM "Payment" pay WHERE pay."saleId" = s.id AND pay.reference ILIKE ${contains(q.search)}))`,
+      Prisma.sql`(s."invoiceNumber" ILIKE ${contains(q.search)} OR c.name ILIKE ${contains(q.search)} OR c.phone ILIKE ${contains(q.search)} OR ${productMatch(q.search)} OR EXISTS (SELECT 1 FROM "Payment" pay WHERE pay."saleId" = s.id AND pay.reference ILIKE ${contains(q.search)}) OR ${receiptMatch(q.search)})`,
     );
   if (q.status === 'VOIDED') clauses.push(Prisma.sql`s.status = 'VOIDED'`);
   if (q.status && q.status !== 'VOIDED') {
@@ -95,7 +96,7 @@ export function ledgerWhere(q: SalesLedgerQuery, now = new Date()) {
   }
   if (q.method)
     clauses.push(
-      Prisma.sql`EXISTS (SELECT 1 FROM "Payment" pay WHERE pay."saleId" = s.id AND pay."voidedAt" IS NULL AND pay.method::text = ${q.method})`,
+      Prisma.sql`EXISTS (SELECT 1 FROM "Payment" pay WHERE pay."saleId" = s.id AND pay."voidedAt" IS NULL AND pay.method::text = ${q.method}) OR EXISTS (SELECT 1 FROM "CustomerPaymentAllocation" a JOIN "CustomerPaymentReceipt" r ON r.id = a."receiptId" WHERE a."saleId" = s.id AND r.method::text = ${q.method})`,
     );
   for (const [min, max, field] of [
     [q.minTotal, q.maxTotal, Prisma.sql`s."totalAmount"`],

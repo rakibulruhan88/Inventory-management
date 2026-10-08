@@ -1,3 +1,4 @@
+import { normalizeCustomerPhone } from '@afia/contracts';
 import { config } from 'dotenv';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
@@ -9,9 +10,9 @@ async function main() {
   if (await prisma.purchase.count()) return;
   const royal = await prisma.supplier.create({ data: { name: 'Royal Hides Ltd.', phone: '01711-220033', address: 'Hazaribagh, Dhaka', searchText: 'Royal Hides Ltd. 01711-220033' } });
   const dhaka = await prisma.supplier.create({ data: { name: 'Dhaka Leather Traders', phone: '01819-445566', address: 'Savar, Dhaka', searchText: 'Dhaka Leather Traders 01819-445566' } });
-  const rahim = await prisma.customer.create({ data: { name: 'Rahim Traders', phone: '01712-345678', address: 'Islampur, Dhaka', searchText: 'Rahim Traders 01712-345678' } });
-  const karim = await prisma.customer.create({ data: { name: 'Karim Leather House', phone: '01812-987654', address: 'Chattogram', searchText: 'Karim Leather House 01812-987654' } });
-  await prisma.customer.create({ data: { name: 'Noor Enterprise', phone: '01915-102030', address: 'Narayanganj', searchText: 'Noor Enterprise 01915-102030' } });
+  const rahim = await prisma.customer.create({ data: { name: 'Rahim Traders', phone: '01712-345678', normalizedPhone: normalizeCustomerPhone('01712-345678'), address: 'Islampur, Dhaka', searchText: 'Rahim Traders 01712-345678' } });
+  const karim = await prisma.customer.create({ data: { name: 'Karim Leather House', phone: '01812-987654', normalizedPhone: normalizeCustomerPhone('01812-987654'), address: 'Chattogram', searchText: 'Karim Leather House 01812-987654' } });
+  await prisma.customer.create({ data: { name: 'Noor Enterprise', phone: '01915-102030', normalizedPhone: normalizeCustomerPhone('01915-102030'), address: 'Narayanganj', searchText: 'Noor Enterprise 01915-102030' } });
   const products = await Promise.all([
     prisma.product.create({ data: { itemCode: 'AL-101', normalizedItemCode: 'AL-101', name: 'Premium Cow Leather', searchText: 'AL-101 Premium Cow Leather' } }),
     prisma.product.create({ data: { itemCode: 'AL-205', normalizedItemCode: 'AL-205', name: 'Soft Goat Leather', searchText: 'AL-205 Soft Goat Leather' } }),

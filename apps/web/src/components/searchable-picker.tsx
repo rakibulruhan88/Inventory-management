@@ -2,7 +2,7 @@ import { useAutoAnimate } from "@formkit/auto-animate/react";
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Drawer } from "vaul";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ export type SearchablePickerOption = {
 
 type SearchablePickerProps = {
   label: string;
+  triggerId?: string;
   placeholder: string;
   searchPlaceholder?: string;
   options: SearchablePickerOption[];
@@ -26,6 +27,10 @@ type SearchablePickerProps = {
   triggerClassName?: string;
   purchasePresentation?: boolean;
   nestedDrawer?: boolean;
+  emptyMessage?: string;
+  wrapOptionDescriptions?: boolean;
+  triggerContent?: ReactNode;
+  popoverClassName?: string;
 };
 
 function PickerCommand({
@@ -35,9 +40,11 @@ function PickerCommand({
   onSelect,
   onSearchChange,
   purchasePresentation = false,
+  emptyMessage,
+  wrapOptionDescriptions,
 }: Pick<
   SearchablePickerProps,
-  "options" | "value" | "searchPlaceholder" | "onSearchChange" | "purchasePresentation"
+  "options" | "value" | "searchPlaceholder" | "onSearchChange" | "purchasePresentation" | "emptyMessage" | "wrapOptionDescriptions"
 > & {
   onSelect: (value: string) => void;
 }) {
@@ -64,7 +71,7 @@ function PickerCommand({
       </div>
       <Command.List className={cn("overflow-y-auto p-2", purchasePresentation ? "min-h-0 max-h-72 flex-1 overscroll-contain" : "max-h-[min(420px,60vh)]")}>
         <Command.Empty className="px-4 py-10 text-center text-sm text-[var(--muted)]">
-          Nothing found. Try another name or code.
+          {emptyMessage ?? "Nothing found. Try another name or code."}
         </Command.Empty>
         <Command.Group heading="Results">
           <div ref={resultsParent}>
@@ -97,7 +104,7 @@ function PickerCommand({
                     {option.label}
                   </span>
                   {option.description ? (
-                    <span className="mt-0.5 block truncate text-xs text-[var(--muted)]">
+                    <span className={cn("mt-0.5 block text-xs text-[var(--muted)]", wrapOptionDescriptions ? "whitespace-pre-line break-words" : "truncate")}>
                       {option.description}
                     </span>
                   ) : null}
@@ -116,6 +123,7 @@ function PickerCommand({
 
 export function SearchablePicker({
   label,
+  triggerId,
   placeholder,
   searchPlaceholder,
   options,
@@ -126,6 +134,10 @@ export function SearchablePicker({
   triggerClassName,
   purchasePresentation = false,
   nestedDrawer = false,
+  emptyMessage,
+  wrapOptionDescriptions,
+  triggerContent,
+  popoverClassName,
 }: SearchablePickerProps) {
   const [open, setOpen] = useState(false);
   const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -138,6 +150,7 @@ export function SearchablePicker({
   const trigger = (
     <button
       type="button"
+      id={triggerId}
       aria-label={label}
       className={cn(
         "flex items-center rounded-lg border border-[var(--input)] bg-white text-left shadow-sm outline-none transition hover:border-[var(--primary-border)] focus-visible:border-[var(--primary)] focus-visible:ring-2 focus-visible:ring-[rgb(37_99_235/0.16)]",
@@ -145,20 +158,17 @@ export function SearchablePicker({
         triggerClassName,
       )}
     >
-      <Search className="size-5 shrink-0 text-[var(--accent)]" />
-      {compact ? null : (
+      {triggerContent ?? (
         <>
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-sm",
-              selected
-                ? "font-medium text-[var(--ink)]"
-                : "text-[var(--muted)]",
-            )}
-          >
-            {selected?.label ?? placeholder}
-          </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-[var(--muted)]" />
+          <Search className="size-5 shrink-0 text-[var(--accent)]" />
+          {compact ? null : (
+            <>
+              <span className={cn("min-w-0 flex-1 truncate text-sm", selected ? "font-medium text-[var(--ink)]" : "text-[var(--muted)]")}>
+                {selected?.label ?? placeholder}
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 text-[var(--muted)]" />
+            </>
+          )}
         </>
       )}
     </button>
@@ -179,9 +189,12 @@ export function SearchablePicker({
               purchasePresentation
                 ? "purchase-form-controls flex max-h-[min(360px,var(--radix-popover-content-available-height))] flex-col rounded-md shadow-md"
                 : "min-w-100 rounded-xl shadow-[var(--shadow-float)]",
+              popoverClassName,
             )}
           >
             <PickerCommand
+              emptyMessage={emptyMessage}
+              wrapOptionDescriptions={wrapOptionDescriptions}
               options={options}
               value={value}
               searchPlaceholder={searchPlaceholder}
@@ -217,6 +230,8 @@ export function SearchablePicker({
             </button>
           </div>
           <PickerCommand
+            emptyMessage={emptyMessage}
+              wrapOptionDescriptions={wrapOptionDescriptions}
             options={options}
             value={value}
             searchPlaceholder={searchPlaceholder}

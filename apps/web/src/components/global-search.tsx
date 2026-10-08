@@ -23,7 +23,7 @@ const icons = {
   customer: Users,
   supplier: Truck,
 };
-export function GlobalSearch() {
+export function GlobalSearch({ compactMobile = false }: { compactMobile?: boolean }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const nav = useNavigate();
@@ -54,10 +54,10 @@ export function GlobalSearch() {
         aria-expanded={open}
         type="button"
         onClick={() => setOpen(true)}
-        className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--page)] px-3 text-left text-sm text-[var(--muted)] outline-none transition hover:border-[var(--primary-border)] focus-visible:border-[var(--primary)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:px-4"
+        className={`flex min-h-11 min-w-0 items-center justify-center gap-3 rounded-md border border-[var(--border)] bg-[var(--page)] text-left text-sm text-[var(--muted)] outline-none transition hover:border-[var(--primary-border)] focus-visible:border-[var(--primary)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${compactMobile ? "w-11 px-0 md:w-full md:px-4" : "w-full px-3 sm:px-4"}`}
       >
         <Search className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">
+        <span className={`${compactMobile ? "hidden md:block" : ""} min-w-0 flex-1 truncate`}>
           <span className="sm:hidden">Search...</span>
           <span className="hidden sm:inline">
             Search item, customer, container, invoice...

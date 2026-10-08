@@ -1,3 +1,7 @@
+import { readDueSources } from '../customers/account-balances.js';
+import { isAccountingWriteConflict, lockCustomerAccount } from '../customers/payment-accounting.js';
+import { saleLineAmount, MAX_SALE_AMOUNT } from '@afia/contracts';
+import { Prisma } from '../generated/prisma/client.js';
 import { readSalesLedger } from './sales-ledger.js';
 import type { SalesLedgerQuery } from '@afia/contracts';
 import {
@@ -15,11 +19,13 @@ import type {
   StoreSettingsContract,
 } from '@afia/contracts';
 import { normalizeText } from '../common/normalize.js';
+import { resolveSaleCustomer } from '../customers/customer-resolution.js';
 import {
-  missingPartyDetails,
-  normalizePartyInput,
-  resolvePartyMatch,
-} from '../common/party-resolution.js';
+  customerIdentitySelect,
+  customerPhoneSearch,
+  isCustomerPhoneUniqueError,
+  phoneConflict,
+} from '../customers/customer-identity.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateSaleDto } from './sale.dto.js';
 import { allocateInvoiceNumber } from './invoice-number.js';
@@ -75,6 +81,10 @@ export class SalesService {
                   some: { reference: { contains: term, mode: 'insensitive' } },
                 },
               },
+              { paymentAllocations: { some: { receipt: { OR: [
+                { reference: { contains: term, mode: 'insensitive' } },
+                { receiptNumber: { contains: term, mode: 'insensitive' } },
+              ] } } } },
             ],
           }
         : {},
@@ -108,6 +118,7 @@ export class SalesService {
             where: { voidedAt: null },
             orderBy: { receivedAt: 'asc' },
           },
+          paymentAllocations: { include: { receipt: true }, orderBy: { createdAt: 'asc' } },
           emailLogs: {
             where: { status: 'SENT' },
             orderBy: { sentAt: 'desc' },
@@ -137,6 +148,8 @@ export class SalesService {
       voidReason: sale.voidReason,
       customerId: sale.customerId,
       currentCustomerEmail: sale.customer.email,
+      previousOutstandingBeforeSale: sale.previousOutstandingBeforeSale == null ? null : Number(sale.previousOutstandingBeforeSale),
+      outstandingAfterSale: sale.outstandingAfterSale == null ? null : Number(sale.outstandingAfterSale),
       customer: {
         name: sale.customerNameSnapshot || sale.customer.name,
         phone: hasSnapshot ? sale.customerPhoneSnapshot : sale.customer.phone,
@@ -153,6 +166,7 @@ export class SalesService {
         description: line.descriptionSnapshot ?? null,
         rollsSold: line.rollsSold,
         meterSold: Number(line.meterSold) > 0 ? Number(line.meterSold) : null,
+        unitPricePerRoll: line.unitPricePerRoll == null ? null : Number(line.unitPricePerRoll),
         lineTotal: Number(line.lineTotal),
       })),
       subtotal: money(subtotal),
@@ -163,7 +177,7 @@ export class SalesService {
       dueAmount: money(Number(sale.totalAmount) - Number(sale.paidAmount)),
       changeAmount: Number(sale.changeAmount),
       notes: sale.notes,
-      payments: sale.payments.map((payment) => ({
+      payments: [...sale.payments.map((payment) => ({
         id: payment.id,
         receivedAt: payment.receivedAt.toISOString(),
         amount: Number(payment.amount),
@@ -172,7 +186,7 @@ export class SalesService {
         notes: payment.notes,
         invoiceNumber: sale.invoiceNumber,
         saleId: sale.id,
-      })),
+      })), ...sale.paymentAllocations.map(a => ({ id: a.id, receiptId: a.receiptId, receiptNumber: a.receipt.receiptNumber, receivedAt: a.receipt.paidAt.toISOString(), amount: Number(a.amount), method: a.receipt.method, reference: a.receipt.reference, notes: a.receipt.notes, saleId: sale.id, invoiceNumber: sale.invoiceNumber }))].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt) || a.id.localeCompare(b.id)),
       lastEmailedAt: sale.emailLogs[0]?.sentAt.toISOString() ?? null,
       settings: {
         ...publicSettings,
@@ -194,19 +208,38 @@ export class SalesService {
   ): Promise<CreateSaleResponse> {
     if (!input.customerId && !input.customer)
       throw new BadRequestException('Customer name is required.');
-    if (input.lines.some((line) => line.rollsSold < 1))
-      throw new BadRequestException(
-        'Every sale item must sell at least 1 Roll.',
-      );
-    if (input.lines.some((line) => (line.meterSold ?? 0) < 0))
-      throw new BadRequestException('Meter sold cannot be negative.');
-    if (input.lines.some((line) => line.lineTotal <= 0))
-      throw new BadRequestException(
-        'Every sale item must have a Price / Amount.',
-      );
-    const subtotal = money(
-      input.lines.reduce((sum, line) => sum + line.lineTotal, 0),
+    if (!Array.isArray(input.lines) || input.lines.length === 0)
+      throw new BadRequestException('Add at least one sale row.');
+    const pricedLines = input.lines.map((line, index) => {
+      try {
+        const lineTotal = saleLineAmount(line.rollsSold, line.unitPricePerRoll);
+        const meter = line.meterSold ?? 0;
+        if (
+          !Number.isFinite(meter) ||
+          meter < 0 ||
+          new Prisma.Decimal(meter).decimalPlaces() > 2 ||
+          meter > 9999999999.99
+        )
+          throw new Error('Enter valid Meter with at most two decimal places.');
+        return { ...line, lineTotal };
+      } catch (error) {
+        throw new BadRequestException(
+          `Row ${index + 1}: ${error instanceof Error ? error.message : 'Invalid sale row.'}`,
+        );
+      }
+    });
+    const decimalSubtotal = pricedLines.reduce(
+      (sum, line) =>
+        sum.plus(
+          new Prisma.Decimal(line.unitPricePerRoll).times(line.rollsSold),
+        ),
+      new Prisma.Decimal(0),
     );
+    if (decimalSubtotal.gt(MAX_SALE_AMOUNT))
+      throw new BadRequestException(
+        'Sale subtotal exceeds the supported limit.',
+      );
+    const subtotal = decimalSubtotal.toNumber();
     const discountAmount = money(input.discountAmount);
     const totalAmount = money(Math.max(subtotal - discountAmount, 0));
     const receivedAmount = money(input.receivedAmount);
@@ -226,59 +259,11 @@ export class SalesService {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('afia-customer-resolution'))`;
             let customer: Customer;
             if (input.customer) {
-              const normalized = normalizePartyInput({
-                id: input.customer.id ?? input.customerId,
-                name: input.customer.name,
-                phone: input.customer.phone,
-                email: input.customer.email,
-                address: input.customer.address,
-              });
-              if (!normalized.name)
-                throw new BadRequestException('Customer name is required.');
-              const active = await tx.customer.findMany({
-                where: { archivedAt: null },
-                select: {
-                  id: true,
-                  name: true,
-                  phone: true,
-                  email: true,
-                  address: true,
-                },
-              });
-              const match = resolvePartyMatch(normalized, active, 'customer');
-              if (match) {
-                const missing = missingPartyDetails(match, normalized);
-                customer = await tx.customer.update({
-                  where: { id: match.id },
-                  data: {
-                    ...missing,
-                    archivedAt: null,
-                    searchText: [
-                      match.name,
-                      missing.phone ?? match.phone,
-                      missing.email ?? match.email,
-                    ]
-                      .filter(Boolean)
-                      .join(' '),
-                  },
-                });
-              } else {
-                customer = await tx.customer.create({
-                  data: {
-                    name: normalized.name,
-                    phone: normalized.phone,
-                    email: normalized.email,
-                    address: normalized.address,
-                    searchText: [
-                      normalized.name,
-                      normalized.phone,
-                      normalized.email,
-                    ]
-                      .filter(Boolean)
-                      .join(' '),
-                  },
-                });
-              }
+              customer = await resolveSaleCustomer(
+                tx,
+                input.customer,
+                input.customerId,
+              );
             } else {
               const existing = await tx.customer.findFirst({
                 where: { id: input.customerId, archivedAt: null },
@@ -287,6 +272,62 @@ export class SalesService {
               customer = existing;
             }
             const customerId = customer.id;
+            await lockCustomerAccount(tx, customerId);
+            const previousOutstandingBeforeSale = (await readDueSources(tx, customerId)).reduce((sum, s) => sum.plus(s.due), new Prisma.Decimal(0));
+            // Validate the whole sale before allocating. Repeated rows keep their identity,
+            // while all requests for a variant share one stock pool.
+            const lastAllocationByBatch = new Map<string, string>();
+            const stockByVariant = new Map<
+              string,
+              Awaited<ReturnType<typeof tx.inventoryBatch.findMany>>
+            >();
+            const lastRowByVariant = new Map<string, number>();
+            for (const [index, line] of pricedLines.entries())
+              lastRowByVariant.set(line.variantId, index);
+            for (const variantId of lastRowByVariant.keys()) {
+              const batches = await tx.inventoryBatch.findMany({
+                where: {
+                  variantId,
+                  availableRolls: { gt: 0 },
+                  container: { archivedAt: null },
+                  variant: { archivedAt: null, product: { archivedAt: null } },
+                },
+                orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }],
+              });
+              const requests = pricedLines.filter(
+                (line) => line.variantId === variantId,
+              );
+              const rolls = requests.reduce(
+                (sum, line) => sum + line.rollsSold,
+                0,
+              );
+              const meter = requests.reduce(
+                (sum, line) => sum.plus(line.meterSold ?? 0),
+                new Prisma.Decimal(0),
+              );
+              const availableRolls = batches.reduce(
+                (sum, batch) => sum + batch.availableRolls,
+                0,
+              );
+              const availableMeter = batches.reduce(
+                (sum, batch) => sum.plus(batch.availableMeter),
+                new Prisma.Decimal(0),
+              );
+              const variant = await tx.productVariant.findUnique({
+                where: { id: variantId },
+              });
+              if (!variant)
+                throw new NotFoundException('Inventory item not found.');
+              if (rolls > availableRolls)
+                throw new BadRequestException(
+                  `Only ${availableRolls} Rolls are available across all ${variant.color} rows.`,
+                );
+              if (meter.gt(availableMeter))
+                throw new BadRequestException(
+                  `Only ${availableMeter.toNumber().toLocaleString()} Meter is available across all ${variant.color} rows.`,
+                );
+              stockByVariant.set(variantId, batches);
+            }
             const sale = await tx.sale.create({
               data: {
                 invoiceNumber,
@@ -295,6 +336,8 @@ export class SalesService {
                 soldAt: new Date(input.soldAt),
                 totalAmount,
                 paidAmount,
+                previousOutstandingBeforeSale,
+                outstandingAfterSale: previousOutstandingBeforeSale.plus(dueAmount),
                 discountAmount,
                 receivedAmount,
                 changeAmount,
@@ -312,7 +355,7 @@ export class SalesService {
               },
             });
 
-            for (const requested of input.lines) {
+            for (const [rowIndex, requested] of pricedLines.entries()) {
               const requestedMeter = requested.meterSold ?? 0;
               const variant = await tx.productVariant.findUnique({
                 where: { id: requested.variantId },
@@ -320,31 +363,9 @@ export class SalesService {
               });
               if (!variant)
                 throw new NotFoundException('Inventory item not found.');
-              const batches = await tx.inventoryBatch.findMany({
-                where: {
-                  variantId: requested.variantId,
-                  availableRolls: { gt: 0 },
-                  container: { archivedAt: null },
-                  variant: { archivedAt: null, product: { archivedAt: null } },
-                },
-                orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }],
-              });
-              const availableRolls = batches.reduce(
-                (sum, batch) => sum + batch.availableRolls,
-                0,
-              );
-              const availableMeter = batches.reduce(
-                (sum, batch) => sum + Number(batch.availableMeter),
-                0,
-              );
-              if (requested.rollsSold > availableRolls)
-                throw new BadRequestException(
-                  `Only ${availableRolls} Rolls are available for the selected color.`,
-                );
-              if (requestedMeter > availableMeter)
-                throw new BadRequestException(
-                  `Only ${availableMeter.toLocaleString()} Meter is available for the selected color.`,
-                );
+              const batches = stockByVariant.get(requested.variantId)!;
+              const isLastVariantRow =
+                lastRowByVariant.get(requested.variantId) === rowIndex;
 
               const line = await tx.saleLine.create({
                 data: {
@@ -355,6 +376,7 @@ export class SalesService {
                   meterSold: requestedMeter,
                   ratePerMeter: null,
                   discount: 0,
+                  unitPricePerRoll: requested.unitPricePerRoll,
                   lineTotal: requested.lineTotal,
                   itemCodeSnapshot: variant.product.itemCode,
                   itemNameSnapshot: variant.product.name,
@@ -377,7 +399,11 @@ export class SalesService {
                 const calculatedMeterAfter = money(
                   Number(batch.availableMeter) - takeMeter,
                 );
-                const meterAfter = rollsAfter <= 0 ? 0 : calculatedMeterAfter;
+                // Do not discard Meter needed by a later repeated row.
+                const meterAfter =
+                  isLastVariantRow && rollsAfter <= 0
+                    ? 0
+                    : calculatedMeterAfter;
                 const normalizedMeter = money(
                   calculatedMeterAfter - meterAfter,
                 );
@@ -388,7 +414,7 @@ export class SalesService {
                     availableMeter: meterAfter,
                   },
                 });
-                await tx.saleBatchAllocation.create({
+                const allocation = await tx.saleBatchAllocation.create({
                   data: {
                     saleLineId: line.id,
                     batchId: batch.id,
@@ -400,6 +426,7 @@ export class SalesService {
                     meterAfter,
                   },
                 });
+                lastAllocationByBatch.set(batch.id, allocation.id);
                 await tx.stockMovement.create({
                   data: {
                     type: 'SALE',
@@ -422,27 +449,46 @@ export class SalesService {
                     },
                   });
                 }
+                batch.availableRolls = rollsAfter;
+                batch.availableMeter = new Prisma.Decimal(meterAfter);
                 rollsLeft -= takeRolls;
                 meterLeft = money(meterLeft - takeMeter);
               }
 
-              const remaining = await tx.inventoryBatch.aggregate({
-                where: { variantId: requested.variantId },
-                _sum: { availableRolls: true },
-              });
-              if ((remaining._sum.availableRolls ?? 0) === 0) {
+              if (rollsLeft > 0 || meterLeft > 0)
+                throw new BadRequestException(
+                  'Stock changed while allocating this sale. Please try again.',
+                );
+              if (isLastVariantRow) {
+                // Preserve the zero-Roll Meter rule after all repeated rows have allocated.
+                const remaining = await tx.inventoryBatch.aggregate({
+                  where: { variantId: requested.variantId },
+                  _sum: { availableRolls: true },
+                });
                 const meterBatches = await tx.inventoryBatch.findMany({
                   where: {
                     variantId: requested.variantId,
                     availableMeter: { gt: 0 },
+                    ...((remaining._sum.availableRolls ?? 0) === 0
+                      ? {}
+                      : {
+                          availableRolls: 0,
+                          id: { in: batches.map((batch) => batch.id) },
+                        }),
                   },
                 });
                 for (const batch of meterBatches) {
-                  const meterToClear = Number(batch.availableMeter);
                   await tx.inventoryBatch.update({
                     where: { id: batch.id },
                     data: { availableMeter: 0 },
                   });
+                  // Keep the allocation's final stock snapshot consistent with normalization.
+                  const lastAllocationId = lastAllocationByBatch.get(batch.id);
+                  if (lastAllocationId)
+                    await tx.saleBatchAllocation.update({
+                      where: { id: lastAllocationId },
+                      data: { meterAfter: 0 },
+                    });
                   await tx.stockMovement.create({
                     data: {
                       type: 'SALE',
@@ -450,7 +496,7 @@ export class SalesService {
                       batchId: batch.id,
                       reference: invoiceNumber,
                       rollsChange: 0,
-                      meterChange: -meterToClear,
+                      meterChange: -Number(batch.availableMeter),
                     },
                   });
                 }
@@ -463,6 +509,7 @@ export class SalesService {
                   customerId,
                   saleId: sale.id,
                   amount: paidAmount,
+                  cashbookType: 'SALE_PAYMENT',
                   method: input.paymentMethod ?? settings.defaultPaymentMethod,
                 },
               });
@@ -503,7 +550,21 @@ export class SalesService {
           typeof error === 'object' && error !== null && 'code' in error
             ? error.code
             : null;
-        if (code === 'P2034' && attempt < 3) continue;
+        if (isAccountingWriteConflict(error) && attempt < 3) continue;
+        if (isAccountingWriteConflict(error)) throw new ConflictException('The account or stock changed while saving this sale. Please try again.');
+        if (isCustomerPhoneUniqueError(error) && input.customer?.phone) {
+          const normalizedPhone = customerPhoneSearch(input.customer.phone);
+          if (normalizedPhone) {
+            const owner = await this.prisma.customer.findUnique({
+              where: { normalizedPhone },
+              select: customerIdentitySelect,
+            });
+            if (owner) throw phoneConflict(owner);
+          }
+          throw new ConflictException(
+            'This customer phone was used by another request. Select the existing customer and try again.',
+          );
+        }
         if (code === 'P2002')
           throw new ConflictException(
             'An invoice number conflict occurred. Please try again.',
@@ -526,13 +587,15 @@ export class SalesService {
     if (!cleanReason)
       throw new BadRequestException('Cancellation reason is required.');
     return this.prisma.$transaction(async (tx) => {
-      const sale = await tx.sale.findUnique({
-        where: { id },
-        include: { payments: true },
-      });
+      const identity = await tx.sale.findUnique({ where: { id }, select: { customerId: true } });
+      if (!identity) throw new NotFoundException('Sale not found.');
+      await lockCustomerAccount(tx, identity.customerId);
+      await tx.$queryRaw`SELECT id FROM "Sale" WHERE id = ${id} FOR UPDATE`;
+      const sale = await tx.sale.findUnique({ where: { id }, include: { payments: true, paymentAllocations: true } });
       if (!sale) throw new NotFoundException('Sale not found.');
       if (sale.status !== 'COMPLETED')
         throw new ConflictException('This sale has already been voided.');
+      if (sale.paymentAllocations.length) throw new ConflictException('This sale has payment receipt allocations and cannot be voided. Receipt reversal requires a dedicated accounting workflow.');
       const movements = await tx.stockMovement.findMany({
         where: { reference: sale.invoiceNumber, type: 'SALE' },
       });

@@ -1,3 +1,4 @@
+import { normalizeCustomerPhone } from '@afia/contracts';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from './prisma/prisma.service.js';
@@ -43,6 +44,7 @@ describe('final roll-only inventory and sale rules', () => {
         data: {
           name: `${tag} Customer`,
           phone: '01700000000',
+          normalizedPhone: normalizeCustomerPhone('01700000000'),
           address: 'Dhaka',
           searchText: tag,
         },
@@ -92,7 +94,7 @@ describe('final roll-only inventory and sale rules', () => {
         soldAt: new Date().toISOString(),
         discountAmount: 0,
         receivedAmount: 0,
-        lines: [{ variantId, rollsSold: 0, meterSold: 100, lineTotal: 1000 }],
+        lines: [{ variantId, rollsSold: 0, meterSold: 100, unitPricePerRoll: 1000 }],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(await stock()).toEqual({ rolls: 9, meter: 1200 });
@@ -104,18 +106,18 @@ describe('final roll-only inventory and sale rules', () => {
       soldAt: new Date().toISOString(),
       discountAmount: 0,
       receivedAmount: 0,
-      lines: [{ variantId, rollsSold: 2, lineTotal: 80000 }],
+      lines: [{ variantId, rollsSold: 2, unitPricePerRoll: 40000 }],
     });
     expect(await stock()).toEqual({ rolls: 7, meter: 1200 });
   });
 
-  it('deducts supplied Meter and Rolls, uses manual amount, and handles discount and change', async () => {
+  it('deducts supplied Meter and Rolls, uses per-roll pricing, and handles discount and change', async () => {
     const result = await sales.create({
       customerId,
       soldAt: new Date().toISOString(),
       discountAmount: 5000,
       receivedAmount: 50000,
-      lines: [{ variantId, rollsSold: 1, meterSold: 300, lineTotal: 45000 }],
+      lines: [{ variantId, rollsSold: 1, meterSold: 300, unitPricePerRoll: 45000 }],
     });
     expect(await stock()).toEqual({ rolls: 6, meter: 900 });
     expect(result).toMatchObject({
@@ -139,7 +141,7 @@ describe('final roll-only inventory and sale rules', () => {
       soldAt: new Date().toISOString(),
       discountAmount: 10000,
       receivedAmount: 20000,
-      lines: [{ variantId, rollsSold: 1, lineTotal: 80000 }],
+      lines: [{ variantId, rollsSold: 1, unitPricePerRoll: 80000 }],
     });
     expect(result).toMatchObject({
       subtotal: 80000,
@@ -190,7 +192,7 @@ describe('final roll-only inventory and sale rules', () => {
         soldAt: new Date().toISOString(),
         discountAmount: 0,
         receivedAmount: 0,
-        lines: [{ variantId, rollsSold: before.rolls + 1, lineTotal: 1 }],
+        lines: [{ variantId, rollsSold: before.rolls + 1, unitPricePerRoll: 1 }],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
@@ -204,7 +206,7 @@ describe('final roll-only inventory and sale rules', () => {
             variantId,
             rollsSold: 1,
             meterSold: before.meter + 1,
-            lineTotal: 1,
+            unitPricePerRoll: 1,
           },
         ],
       }),
@@ -219,7 +221,7 @@ describe('final roll-only inventory and sale rules', () => {
       soldAt: new Date().toISOString(),
       discountAmount: 0,
       receivedAmount: 0,
-      lines: [{ variantId, rollsSold: before.rolls, lineTotal: 100000 }],
+      lines: [{ variantId, rollsSold: before.rolls, unitPricePerRoll: 20000 }],
     });
     expect(await stock()).toEqual({ rolls: 0, meter: 0 });
     const movements = await prisma.stockMovement.findMany({
@@ -264,7 +266,7 @@ describe('final roll-only inventory and sale rules', () => {
       soldAt: new Date().toISOString(),
       discountAmount: 0,
       receivedAmount: 0,
-      lines: [{ variantId: variant.id, rollsSold: 2, lineTotal: 100 }],
+      lines: [{ variantId: variant.id, rollsSold: 2, unitPricePerRoll: 50 }],
     });
     let batches = await prisma.inventoryBatch.findMany({
       where: { variantId: variant.id },
@@ -347,7 +349,7 @@ describe('final roll-only inventory and sale rules', () => {
       soldAt: new Date().toISOString(),
       discountAmount: 0,
       receivedAmount: 80000,
-      lines: [{ variantId: blackId, rollsSold: 2, lineTotal: 80000 }],
+      lines: [{ variantId: blackId, rollsSold: 2, unitPricePerRoll: 40000 }],
     });
     let black = await prisma.inventoryBatch.aggregate({
       where: { variantId: blackId },
@@ -362,7 +364,7 @@ describe('final roll-only inventory and sale rules', () => {
       soldAt: new Date().toISOString(),
       discountAmount: 0,
       receivedAmount: 100000,
-      lines: [{ variantId: blackId, rollsSold: 3, lineTotal: 100000 }],
+      lines: [{ variantId: blackId, rollsSold: 3, unitPricePerRoll: 33333.33 }],
     });
     black = await prisma.inventoryBatch.aggregate({
       where: { variantId: blackId },
@@ -378,7 +380,7 @@ describe('final roll-only inventory and sale rules', () => {
       discountAmount: 0,
       receivedAmount: 45000,
       lines: [
-        { variantId: brownId, rollsSold: 1, meterSold: 300, lineTotal: 45000 },
+        { variantId: brownId, rollsSold: 1, meterSold: 300, unitPricePerRoll: 45000 },
       ],
     });
     const brown = await prisma.inventoryBatch.aggregate({
@@ -452,17 +454,14 @@ describe('final roll-only inventory and sale rules', () => {
       paymentMethod: 'BANK',
       emailInvoice: true,
       lines: [
-        { variantId: variant.id, rollsSold: 2, meterSold: 100, lineTotal: 300 },
+        { variantId: variant.id, rollsSold: 2, meterSold: 100, unitPricePerRoll: 150 },
       ],
     });
     expect(created.emailStatus).toBe('failed');
-    await customers.receivePayment(
-      hardCustomerId,
-      200,
-      'MOBILE_BANKING',
-      created.invoiceNumber,
-      'Final payment',
-    );
+    // Preserve coverage of legacy ungrouped payment reversal; receipt allocations
+    // are protected by the dedicated receipt regression suite.
+    await prisma.payment.create({ data: { customerId: hardCustomerId, saleId: created.id, amount: 200, method: 'MOBILE_BANKING', reference: created.invoiceNumber, notes: 'Final payment' } });
+    await prisma.sale.update({ where: { id: created.id }, data: { paidAmount: { increment: 200 } } });
     await prisma.customer.update({
       where: { id: hardCustomerId },
       data: { name: 'Changed Customer' },

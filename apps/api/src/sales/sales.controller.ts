@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Query,
+  ValidationPipe,
   StreamableFile,
 } from '@nestjs/common';
 import { IsString, MinLength } from 'class-validator';
@@ -24,7 +25,18 @@ export class SalesController {
   @Get() list(@Query('search') search?: string) {
     return this.sales.list(search);
   }
-  @Get('ledger') ledger(@Query() query: SalesLedgerQueryDto) {
+  @Get('ledger') ledger(
+    @Query(
+      new ValidationPipe({
+        // tsx does not emit design:paramtypes; bind the DTO explicitly.
+        expectedType: SalesLedgerQueryDto,
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    )
+    query: SalesLedgerQueryDto,
+  ) {
     return this.sales.ledger(query);
   }
   @Get(':id') details(@Param('id') id: string) {
@@ -38,7 +50,10 @@ export class SalesController {
       disposition: `attachment; filename="${invoiceFileName(invoice)}"`,
     });
   }
-  @Post() create(@Body() input: CreateSaleDto, @CurrentUser() user: AuthUser) {
+  @Post() create(@Body(new ValidationPipe({
+    expectedType: CreateSaleDto, transform: true, whitelist: true,
+    forbidNonWhitelisted: true,
+  })) input: CreateSaleDto, @CurrentUser() user: AuthUser) {
     return this.sales.create(input, user.id);
   }
   @Post(':id/email') email(@Param('id') id: string) {

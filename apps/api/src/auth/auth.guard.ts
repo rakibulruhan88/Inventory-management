@@ -8,6 +8,8 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { AuthUser } from '@afia/contracts';
+import type { Response } from 'express';
+import { SESSION_COOKIE, sessionCookieOptions } from './session-options.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
 
 @Injectable()
@@ -32,12 +34,26 @@ export class AuthGuard implements CanActivate {
     const cookie = request.headers.cookie
       ?.split(';')
       .map((x) => x.trim())
-      .find((x) => x.startsWith('afia_session='))
-      ?.slice(13);
+      .find((x) => x.startsWith(`${SESSION_COOKIE}=`))
+      ?.slice(SESSION_COOKIE.length + 1);
     const token = bearer || cookie;
     if (!token) throw new UnauthorizedException('Please sign in.');
     try {
-      request.user = await this.jwt.verifyAsync<AuthUser>(token);
+      const verified = await this.jwt.verifyAsync<AuthUser & { exp?: number }>(token);
+      request.user = verified;
+      if (cookie && !bearer) {
+        // Upgrade a still-valid old seven-day login without asking the user to log in again.
+        const persistentToken = verified.exp === undefined ? token : await this.jwt.signAsync({
+          id: verified.id,
+          name: verified.name,
+          username: verified.username,
+          email: verified.email,
+          role: verified.role,
+        } satisfies AuthUser);
+        context.switchToHttp().getResponse<Response>().cookie(
+          SESSION_COOKIE, persistentToken, sessionCookieOptions(),
+        );
+      }
       return true;
     } catch {
       throw new UnauthorizedException(

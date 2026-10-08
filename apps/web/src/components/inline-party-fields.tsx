@@ -1,3 +1,5 @@
+import { customerPhoneError } from '@afia/contracts';
+import { useId } from 'react';
 import { CheckCircle2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -16,6 +18,7 @@ export type PartySuggestion = InlinePartyValues & {
 type Props = {
   kind: "Customer" | "Supplier";
   dense?: boolean;
+  transactionPresentation?: boolean;
   autoComplete?: "on" | "off";
   values: InlinePartyValues;
   selected?: PartySuggestion;
@@ -23,6 +26,7 @@ type Props = {
   searching?: boolean;
   currencySymbol?: string;
   nameError?: string;
+  phoneError?: string;
   onFieldChange: (field: keyof InlinePartyValues, value: string) => void;
   onSearch: (value: string) => void;
   onSelect: (party: PartySuggestion) => void;
@@ -32,6 +36,7 @@ type Props = {
 export function InlinePartyFields({
   kind,
   dense = false,
+  transactionPresentation = false,
   autoComplete,
   values,
   selected,
@@ -39,11 +44,14 @@ export function InlinePartyFields({
   searching,
   currencySymbol = "৳",
   nameError,
+  phoneError,
   onFieldChange,
   onSearch,
   onSelect,
   onClear,
 }: Props) {
+  const phoneErrorId = useId();
+  const phoneMessage = phoneError ?? (kind === 'Customer' && !selected ? customerPhoneError(values.phone) : null);
   const field = (
     key: keyof InlinePartyValues,
     label: string,
@@ -54,6 +62,8 @@ export function InlinePartyFields({
       <Input
         className={dense ? "mt-1 h-11 w-full" : "mt-2 w-full"}
         type={options?.type}
+        aria-invalid={key === 'phone' && phoneMessage ? true : undefined}
+        aria-describedby={key === 'phone' && phoneMessage ? phoneErrorId : undefined}
         autoComplete={autoComplete}
         placeholder={options?.placeholder}
         value={values[key]}
@@ -63,6 +73,7 @@ export function InlinePartyFields({
           if (key !== "address") onSearch(event.target.value);
         }}
       />
+      {key === "phone" && phoneMessage ? <span id={phoneErrorId} className="mt-1 block text-xs text-[var(--danger)]">{phoneMessage}</span> : null}
       {key === "name" && nameError ? (
         <span className="mt-1 block text-xs text-[var(--danger)]">
           {nameError}
@@ -74,7 +85,7 @@ export function InlinePartyFields({
   return (
     <div className="min-w-0">
       <div className="flex items-center justify-between gap-3">
-        <h2 className={dense ? "text-sm font-semibold" : "font-semibold"}>{kind} Information</h2>
+        <h2 className={dense ? "text-sm font-semibold" : "font-semibold"}>{transactionPresentation ? kind : `${kind} Information`}</h2>
         {selected ? (
           <button
             type="button"
@@ -104,12 +115,15 @@ export function InlinePartyFields({
           required: true,
           placeholder: kind === "Customer" ? "Rahim Traders" : "Supplier name",
         })}
-        {field("email", "Email", {
-          type: "email",
-          placeholder: "name@example.com",
-        })}
-        {field("phone", "Phone", { type: "tel", placeholder: "01712345678" })}
-        {field("address", "Address", { placeholder: "Dhaka" })}
+        {transactionPresentation ? <>
+          {field("phone", "Phone", { type: "tel", placeholder: "01712345678" })}
+          {field("email", "Email", { type: "email", placeholder: "name@example.com" })}
+          {field("address", "Address", { placeholder: "Dhaka" })}
+        </> : <>
+          {field("email", "Email", { type: "email", placeholder: "name@example.com" })}
+          {field("phone", "Phone", { type: "tel", placeholder: "01712345678" })}
+          {field("address", "Address", { placeholder: "Dhaka" })}
+        </>}
       </div>
       {!selected && (suggestions.length > 0 || searching) ? (
         <div className={dense ? "mt-3 w-full overflow-hidden border border-[var(--border)] bg-[var(--surface)]" : "mt-3 w-full overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-[var(--shadow-float)]"}>

@@ -12,7 +12,6 @@ import {
   Phone,
   Plus,
   Search,
-  Truck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -20,6 +19,12 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Drawer } from "vaul";
 import { z } from "zod";
+import {
+  formatMoney,
+  LedgerError,
+  LedgerLoading,
+} from "@/features/sales/ledger-components";
+import "@/features/records/customers.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -96,7 +101,7 @@ function SupplierForm({
     <Drawer.Root open={open} onOpenChange={onOpenChange}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />
-        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-2xl rounded-t-[26px] border border-[var(--border)] bg-white outline-none">
+        <Drawer.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-2xl max-h-[90dvh] overflow-y-auto rounded-t-lg border border-[var(--border)] bg-[var(--surface)] outline-none">
           <div className="mx-auto mt-3 h-1.5 w-10 rounded-full bg-[var(--border-strong)]" />
           <form
             className="px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-5 sm:px-7"
@@ -165,16 +170,31 @@ function SupplierForm({
                 />
               </label>
             </div>
-            <Button
-              className="mt-5 w-full"
-              type="submit"
-              disabled={save.isPending}
-            >
-              {save.isPending && (
-                <LoaderCircle className="size-4 animate-spin" />
-              )}{" "}
-              Save supplier
-            </Button>
+            {save.error && (
+              <p role="alert" className="mt-3 text-sm text-[var(--danger)]">
+                {save.error.message}
+              </p>
+            )}
+            <div className="mt-5 flex gap-3">
+              <Button
+                className="flex-1"
+                type="submit"
+                disabled={save.isPending}
+              >
+                {save.isPending && (
+                  <LoaderCircle className="size-4 animate-spin" />
+                )}{" "}
+                Save supplier
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={save.isPending}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
+            </div>
           </form>
         </Drawer.Content>
       </Drawer.Portal>
@@ -189,65 +209,157 @@ export function SuppliersPage() {
     queryKey: ["suppliers", search],
     queryFn: () => getSuppliers(search),
   });
+  const rows = suppliers.data ?? [];
   return (
-    <div className="mx-auto max-w-350 px-4 pb-28 pt-7 md:px-7 lg:px-10">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex gap-4">
-          <span className="grid size-11 place-items-center rounded-xl bg-[var(--surface-warm)] text-[var(--accent)]">
-            <Truck className="size-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-semibold sm:text-3xl">Suppliers</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              Contacts, shipments and purchase history.
-            </p>
-          </div>
+    <div className="mx-auto max-w-350 px-4 pb-28 pt-6 md:px-7 lg:px-10">
+      <header className="customers-header">
+        <div>
+          <p className="customers-eyebrow">Afia Leather · Supply partners</p>
+          <h1>Suppliers</h1>
+          <p>Contacts, purchase records and shipments in one place.</p>
         </div>
         <Button onClick={() => setAdding(true)}>
-          <Plus className="size-4" /> Add supplier
+          <Plus className="size-4" />
+          Add Supplier
         </Button>
+      </header>
+      <div className="customers-toolbar">
+        <label className="customers-search">
+          <span className="sr-only">
+            Search suppliers by name, phone or email
+          </span>
+          <Search className="size-4" aria-hidden="true" />
+          <Input
+            type="search"
+            maxLength={200}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search name, phone or email…"
+          />
+        </label>
+        <p className="compact-results">
+          {suppliers.isSuccess
+            ? `${rows.length} suppliers shown`
+            : "Supplier directory"}
+        </p>
       </div>
-      <label className="relative mt-6 block">
-        <Search className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-[var(--accent)]" />
-        <Input
-          className="h-13 pl-12"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search name, phone or email..."
-        />
-      </label>
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {suppliers.data?.map((supplier) => (
-          <Link
-            key={supplier.id}
-            to={`/suppliers/${supplier.id}`}
-            className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)] transition hover:border-[var(--primary-border)] hover:shadow-md"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="font-semibold">{supplier.name}</h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  {supplier.phone || supplier.email || "No contact details"}
-                </p>
-              </div>
-              <span className="rounded-full bg-[var(--surface-warm)] px-2.5 py-1 text-xs text-[var(--accent)]">
-                {supplier.purchaseCount} purchases
-              </span>
+      <section
+        className="customers-directory compact-directory"
+        aria-label="Supplier directory"
+        aria-busy={suppliers.isFetching}
+      >
+        {suppliers.isError ? (
+          <LedgerError
+            message={suppliers.error.message}
+            retry={() => void suppliers.refetch()}
+          />
+        ) : suppliers.isPending ? (
+          <LedgerLoading />
+        ) : !rows.length ? (
+          <div className="customers-empty">
+            <h2>{search ? "No matching suppliers" : "No suppliers yet"}</h2>
+            <p>
+              {search
+                ? "Try another supplier name, phone or email."
+                : "Add a supplier to keep their contact and purchase history together."}
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => (search ? setSearch("") : setAdding(true))}
+            >
+              {search ? "Clear Search" : "Add Supplier"}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <table className="customers-table compact-suppliers-table">
+              <caption className="sr-only">
+                Supplier contacts and purchase records
+              </caption>
+              <thead>
+                <tr>
+                  {[
+                    "Supplier",
+                    "Contact",
+                    "Purchases",
+                    "Total Purchases",
+                    "",
+                  ].map((label, i) => (
+                    <th key={i} scope="col">
+                      {label || <span className="sr-only">Actions</span>}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      <Link className="customer-name" to={`/suppliers/${s.id}`}>
+                        {s.name}
+                      </Link>
+                      {s.address && (
+                        <p className="customer-address">{s.address}</p>
+                      )}
+                    </td>
+                    <td>
+                      <p className="compact-contact">{s.phone || "No phone"}</p>
+                      {s.email && <p className="customer-contact">{s.email}</p>}
+                    </td>
+                    <td className="customer-amount">{s.purchaseCount}</td>
+                    <td className="customer-amount">
+                      {formatMoney(s.totalPurchases)}
+                    </td>
+                    <td>
+                      <Button asChild variant="outline" className="text-xs">
+                        <Link to={`/suppliers/${s.id}`}>View Supplier</Link>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="customers-mobile">
+              {rows.map((s) => (
+                <article key={s.id}>
+                  <Link className="customer-name" to={`/suppliers/${s.id}`}>
+                    {s.name}
+                  </Link>
+                  <p className="customer-contact">
+                    {s.phone || s.email || "No contact details"}
+                  </p>
+                  {s.address && <p className="customer-address">{s.address}</p>}
+                  <div className="compact-mobile-footer">
+                    <dl className="customer-mobile-money">
+                      <div>
+                        <dt>Purchases</dt>
+                        <dd>{s.purchaseCount}</dd>
+                      </div>
+                      <div>
+                        <dt>Total Purchases</dt>
+                        <dd>{formatMoney(s.totalPurchases)}</dd>
+                      </div>
+                    </dl>
+                    <Button asChild variant="outline" className="text-xs">
+                      <Link to={`/suppliers/${s.id}`}>View Supplier</Link>
+                    </Button>
+                  </div>
+                </article>
+              ))}
             </div>
-            <div className="mt-4 border-t border-[var(--border)] pt-3 text-sm">
-              <span className="text-[var(--muted)]">Total purchases</span>
-              <strong className="float-right">
-                ৳{supplier.totalPurchases.toLocaleString()}
-              </strong>
-            </div>
-          </Link>
-        ))}
-        {suppliers.data?.length === 0 && (
-          <p className="col-span-full py-12 text-center text-sm text-[var(--muted)]">
-            No suppliers found.
-          </p>
+          </>
         )}
-      </div>
+        {suppliers.isSuccess && (
+          <footer className="customers-list-footer">
+            <span>
+              {suppliers.isFetching
+                ? "Updating…"
+                : "Open a supplier for contacts and purchase history."}
+            </span>
+            <span>Search to find more · Up to 50 results</span>
+          </footer>
+        )}
+      </section>
       <SupplierForm open={adding} onOpenChange={setAdding} />
     </div>
   );
@@ -280,6 +392,15 @@ export function SupplierDetailPage() {
         Loading supplier…
       </div>
     );
+  if (supplier.isError)
+    return (
+      <div className="mx-auto max-w-5xl px-4 py-6">
+        <LedgerError
+          message={supplier.error.message}
+          retry={() => void supplier.refetch()}
+        />
+      </div>
+    );
   if (!data)
     return (
       <div className="grid min-h-80 place-items-center text-sm text-[var(--muted)]">
@@ -298,7 +419,7 @@ export function SupplierDetailPage() {
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold sm:text-3xl">{data.name}</h1>
+            <h1 className="break-words text-2xl font-semibold">{data.name}</h1>
             {data.archivedAt && (
               <span className="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-xs text-[var(--muted)]">
                 Archived
@@ -345,34 +466,34 @@ export function SupplierDetailPage() {
         )}
       </div>
       {data.notes && (
-        <p className="mt-5 rounded-xl border border-[var(--primary-border)] bg-[var(--primary-soft)] p-4 text-sm text-[var(--ink-soft)]">
+        <p className="mt-5 rounded-md border border-[var(--primary-border)] bg-[var(--primary-soft)] p-4 text-sm text-[var(--ink-soft)]">
           {data.notes}
         </p>
       )}
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <article className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)]">
+        <article className="rounded-md border border-[var(--border)] bg-white p-4">
           <p className="text-xs text-[var(--muted)]">Total Purchases</p>
           <p className="mt-2 text-2xl font-semibold">
             ৳{data.totalPurchases.toLocaleString()}
           </p>
         </article>
-        <article className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)]">
+        <article className="rounded-md border border-[var(--border)] bg-white p-4">
           <p className="text-xs text-[var(--muted)]">Purchase Records</p>
           <p className="mt-2 text-2xl font-semibold">{data.purchaseCount}</p>
         </article>
-        <article className="col-span-2 rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)] sm:col-span-1">
+        <article className="col-span-2 rounded-md border border-[var(--border)] bg-white p-4 sm:col-span-1">
           <p className="text-xs text-[var(--muted)]">Containers / Shipments</p>
           <p className="mt-2 text-2xl font-semibold">{data.shipments.length}</p>
         </article>
       </section>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <section className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)]">
+        <section className="rounded-md border border-[var(--border)] bg-white p-4">
           <h2 className="font-semibold">Recent Purchases</h2>
           <div className="mt-3 space-y-2">
             {data.recentPurchases.map((purchase) => (
               <div
                 key={purchase.id}
-                className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-subtle)] p-3 text-sm"
+                className="flex items-center justify-between gap-3 rounded-md bg-[var(--surface-subtle)] p-3 text-sm"
               >
                 <div>
                   <strong>{purchase.purchaseNumber}</strong>
@@ -391,13 +512,13 @@ export function SupplierDetailPage() {
             )}
           </div>
         </section>
-        <section className="rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)]">
+        <section className="rounded-md border border-[var(--border)] bg-white p-4">
           <h2 className="font-semibold">Containers / Shipments</h2>
           <div className="mt-3 space-y-2">
             {data.shipments.map((shipment) => (
               <div
                 key={shipment.id}
-                className="flex items-center justify-between rounded-xl bg-[var(--surface-subtle)] p-3 text-sm"
+                className="flex items-center justify-between rounded-md bg-[var(--surface-subtle)] p-3 text-sm"
               >
                 <strong>{shipment.containerNumber}</strong>
                 <span className="text-[var(--muted)]">
@@ -413,7 +534,7 @@ export function SupplierDetailPage() {
           </div>
         </section>
       </div>
-      <section className="mt-5 rounded-xl border border-[var(--border)] bg-white p-5 shadow-[var(--shadow-card)]">
+      <section className="mt-5 rounded-md border border-[var(--border)] bg-white p-4">
         <h2 className="font-semibold">Purchase History</h2>
         <div className="mt-3 overflow-x-auto rounded-lg border border-[var(--border)]">
           <table className="w-full min-w-150 text-left text-sm">

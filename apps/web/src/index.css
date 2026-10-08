@@ -141,47 +141,6 @@ button {
   }
 }
 
-@page {
-  size: A4;
-  margin: 0;
-}
-
-@media print {
-  html,
-  body {
-    background: white !important;
-  }
-
-  .app-chrome,
-  .invoice-actions {
-    display: none !important;
-  }
-
-  main,
-  .workspace-body {
-    padding-left: 0 !important;
-  }
-
-  .invoice-page {
-    padding: 0 !important;
-  }
-
-  .invoice-sheet {
-    width: 210mm !important;
-    min-height: 297mm !important;
-    margin: 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    padding: 15mm !important;
-  }
-
-  .invoice-row,
-  .invoice-totals {
-    break-inside: avoid;
-  }
-}
-
 [data-vaul-drawer][data-vaul-drawer-direction=bottom]::after {
   display: none;
 }

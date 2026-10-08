@@ -1,101 +1,70 @@
+import { MAX_SALE_AMOUNT } from "@afia/contracts";
+import {
+  addColorRow,
+  removeColorRow,
+  previewSubtotal,
+  stockErrors,
+} from "./new-sale-domain";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import {
-  ArrowLeft,
-  LoaderCircle,
-  Plus,
-  ReceiptText,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, LoaderCircle, Plus } from "lucide-react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { z } from "zod";
+import {
+  newSaleSchema,
+  type NewSaleFormData as FormData,
+} from "./new-sale-form";
+import "./new-sale.css";
+import { formatSaleMoney } from "./new-sale-presentation";
+import { SaleCustomerEntry } from "./sale-customer-entry";
+import { SalePaymentPanel } from "./sale-payment-panel";
+import { SaleItemGroup } from "./sale-item-group";
 import type { CustomerSummary } from "@afia/contracts";
 import {
-  InlinePartyFields,
   type InlinePartyValues,
   type PartySuggestion,
 } from "@/components/inline-party-fields";
-import { SearchablePicker } from "@/components/searchable-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createSale, getCustomers, getProducts, getSettings } from "@/lib/api";
+import {
+  CustomerPhoneConflictError,
+  createSale,
+  getCustomerAccount,
+  getCustomers,
+  getProducts,
+  getSettings,
+} from "@/lib/api";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
-const saleLine = z.object({
-  variantId: z.string().min(1, "Choose an item and color."),
-  rollsSold: z.number().int().min(1, "Enter at least one roll."),
-  meterSold: z.number().min(0, "Meter cannot be negative."),
-  lineTotal: z.number().positive("Enter the price for this item."),
-});
-const saleItem = z
-  .object({
-    productId: z.string().min(1, "Choose an item."),
-    colors: z.array(saleLine).min(1),
-  })
-  .superRefine((item, context) => {
-    const variants = new Set<string>();
-    item.colors.forEach((color, index) => {
-      if (!color.variantId) return;
-      if (variants.has(color.variantId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["colors", index, "variantId"],
-          message: "This color is already included for this item.",
-        });
-      }
-      variants.add(color.variantId);
-    });
-  });
-const schema = z
-  .object({
-    customer: z.object({
-      id: z.string().optional(),
-      name: z.string().trim().min(1, "Customer name is required."),
-      email: z.union([z.email("Enter a valid email."), z.literal("")]),
-      phone: z.string(),
-      address: z.string(),
-    }),
-    soldAt: z.string().min(1),
-    discountAmount: z.number().min(0),
-    receivedAmount: z.number().min(0),
-    paymentMethod: z.enum(["CASH", "BANK", "MOBILE_BANKING", "OTHER"]),
-    emailInvoice: z.boolean(),
-    notes: z.string().optional(),
-    items: z.array(saleItem).min(1),
-  })
-  .superRefine((sale, context) => {
-    const products = new Set<string>();
-    sale.items.forEach((item, index) => {
-      if (!item.productId) return;
-      if (products.has(item.productId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["items", index, "productId"],
-          message: "This item is already included above. Add another color there.",
-        });
-      }
-      products.add(item.productId);
-    });
-  });
-type FormData = z.infer<typeof schema>;
 const blankColor = (): FormData["items"][number]["colors"][number] => ({
+  entryKey: crypto.randomUUID(),
   variantId: "",
   rollsSold: 1,
   meterSold: 0,
-  lineTotal: 0,
+  unitPricePerRoll: 0,
 });
 const blankItem = (): FormData["items"][number] => ({
   productId: "",
   colors: [blankColor()],
 });
-const numberValue = (value: unknown) => (value === "" ? 0 : Number(value));
 
 export function NewSalePage() {
   const navigate = useNavigate();
+  const [notesOpen, setNotesOpen] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [wideWorkspace, setWideWorkspace] = useState(false);
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setWideWorkspace(entry.contentRect.width >= 1120);
+    });
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, []);
   const queryClient = useQueryClient();
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
@@ -113,7 +82,7 @@ export function NewSalePage() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const symbol = settings.data?.currencySymbol ?? "৳";
   const form = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(newSaleSchema),
     defaultValues: {
       customer: { id: undefined, name: "", email: "", phone: "", address: "" },
       soldAt: format(new Date(), "yyyy-MM-dd"),
@@ -125,16 +94,26 @@ export function NewSalePage() {
       items: [blankItem()],
     },
   });
+  const selectedAccount = useQuery({
+    queryKey: ["customers", "account-context", selectedCustomer?.id],
+    queryFn: () => getCustomerAccount(selectedCustomer!.id),
+    enabled: !!selectedCustomer?.id,
+  });
+  const previousOutstanding = selectedAccount.data?.totalDue ?? selectedCustomer?.totalDue ?? 0;
   const fields = useFieldArray({ control: form.control, name: "items" });
   const values = useWatch({ control: form.control });
-  const subtotal = (values.items ?? [])
-    .flatMap((item) => item.colors ?? [])
-    .reduce((sum, color) => sum + (color?.lineTotal || 0), 0);
-  const grandTotal = Math.max(subtotal - (values.discountAmount || 0), 0);
+  const draftRows = (values.items ?? []).flatMap((item) => item.colors ?? []);
+  const subtotal = previewSubtotal(draftRows);
+  const inventoryErrors = stockErrors(draftRows, products.data ?? []);
+  const grandTotal = Math.max(
+    Number((subtotal - (values.discountAmount || 0)).toFixed(2)),
+    0,
+  );
+  const notesField = form.register("notes");
   const received = values.receivedAmount || 0;
   const paid = Math.min(received, grandTotal);
-  const due = Math.max(grandTotal - received, 0);
-  const change = Math.max(received - grandTotal, 0);
+  const due = Math.max(Number((grandTotal - received).toFixed(2)), 0);
+  const change = Math.max(Number((received - grandTotal).toFixed(2)), 0);
 
   const save = useMutation({
     mutationFn: createSale,
@@ -155,6 +134,27 @@ export function NewSalePage() {
       );
       navigate(`/sales/${result.id}/invoice`);
     },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const selectCustomer = (selected: CustomerSummary) => {
+    setSelectedCustomer(selected);
+    form.setValue(
+      "customer",
+      {
+        id: selected.id,
+        name: selected.name,
+        email: selected.email ?? "",
+        phone: selected.phone ?? "",
+        address: selected.address ?? "",
+      },
+      { shouldValidate: true },
+    );
+    setCustomerSearch("");
+    save.reset();
+  };
+  const useExistingCustomer = useMutation({
+    mutationFn: (id: string) => getCustomerAccount(id),
+    onSuccess: selectCustomer,
     onError: (error: Error) => toast.error(error.message),
   });
   const customerSuggestions: PartySuggestion[] = (customers.data ?? []).map(
@@ -199,13 +199,19 @@ export function NewSalePage() {
   };
   const addColor = (itemIndex: number) => {
     const colors = form.getValues(`items.${itemIndex}.colors`);
-    form.setValue(`items.${itemIndex}.colors`, [...colors, blankColor()]);
+    form.setValue(
+      `items.${itemIndex}.colors`,
+      addColorRow(colors, blankColor()),
+      { shouldValidate: form.formState.isSubmitted },
+    );
+    requestAnimationFrame(() => document.getElementById(`sale-color-${itemIndex}-${colors.length}`)?.focus());
   };
   const removeColor = (itemIndex: number, colorIndex: number) => {
     const colors = form.getValues(`items.${itemIndex}.colors`);
     form.setValue(
       `items.${itemIndex}.colors`,
-      colors.filter((_, index) => index !== colorIndex),
+      removeColorRow(colors, colorIndex),
+      { shouldValidate: form.formState.isSubmitted },
     );
   };
   const selectColor = (
@@ -213,15 +219,6 @@ export function NewSalePage() {
     colorIndex: number,
     variantId: string,
   ) => {
-    const duplicate = form
-      .getValues(`items.${itemIndex}.colors`)
-      .some((color, index) =>
-        index === colorIndex ? false : color.variantId === variantId,
-      );
-    if (duplicate) {
-      toast.error("That color is already included for this item.");
-      return;
-    }
     form.setValue(
       `items.${itemIndex}.colors.${colorIndex}.variantId`,
       variantId,
@@ -229,482 +226,323 @@ export function NewSalePage() {
     );
   };
   const submit = (data: FormData) => {
+    if (inventoryErrors.size) return;
+    if (subtotal > MAX_SALE_AMOUNT) {
+      toast.error("Sale subtotal exceeds the supported limit.");
+      return;
+    }
     const { items, ...sale } = data;
     save.mutate({
       ...sale,
       soldAt: new Date(`${data.soldAt}T12:00:00`).toISOString(),
       lines: items.flatMap((item) =>
         item.colors.map((color) => ({
-          ...color,
+          variantId: color.variantId,
+          rollsSold: color.rollsSold,
+          unitPricePerRoll: color.unitPricePerRoll,
           meterSold: color.meterSold > 0 ? color.meterSold : undefined,
         })),
       ),
     });
   };
 
-  return (
-    <div className="mx-auto max-w-4xl px-4 pb-32 pt-5 md:px-7 lg:px-10">
-      <Link
-        to="/sales"
-        className="flex min-h-11 items-center gap-2 text-sm text-[var(--muted)]"
-      >
-        <ArrowLeft className="size-4" /> Sales
-      </Link>
-      <div className="mt-3 flex gap-4">
-        <span className="grid size-11 place-items-center rounded-xl bg-[var(--surface-warm)] text-[var(--accent)]">
-          <ReceiptText className="size-5" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold sm:text-3xl">New sale</h1>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Choose each item once, then add the colors being sold.
-          </p>
-        </div>
-      </div>
-      <form onSubmit={form.handleSubmit(submit)} className="mt-7 space-y-5">
-        <section className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5">
-          <InlinePartyFields
-            kind="Customer"
-            values={
-              (values.customer ?? {
-                name: "",
-                email: "",
-                phone: "",
-                address: "",
-              }) as InlinePartyValues
-            }
-            selected={
-              selectedCustomer
-                ? {
-                    id: selectedCustomer.id,
-                    name: selectedCustomer.name,
-                    email: selectedCustomer.email ?? "",
-                    phone: selectedCustomer.phone ?? "",
-                    address: selectedCustomer.address ?? "",
-                    due: selectedCustomer.totalDue,
-                  }
-                : undefined
-            }
-            suggestions={customerSuggestions}
-            searching={customers.isFetching}
-            currencySymbol={symbol}
-            nameError={form.formState.errors.customer?.name?.message}
-            onSearch={setCustomerSearch}
-            onFieldChange={(field, value) => {
-              if (selectedCustomer) {
-                setSelectedCustomer(null);
-                form.setValue("customer.id", undefined);
-              }
-              form.setValue(`customer.${field}`, value, {
-                shouldValidate: field === "name" || field === "email",
-              });
-            }}
-            onSelect={(party) => {
-              const selected = customers.data?.find((x) => x.id === party.id);
-              if (!selected) return;
-              setSelectedCustomer(selected);
-              form.setValue("customer", {
-                id: selected.id,
-                name: selected.name,
-                email: selected.email ?? "",
-                phone: selected.phone ?? "",
-                address: selected.address ?? "",
-              });
-              setCustomerSearch("");
-            }}
-            onClear={() => {
-              setSelectedCustomer(null);
-              form.setValue("customer.id", undefined);
-            }}
-          />
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl bg-[var(--surface-subtle)] px-4 py-3 text-sm">
-              <span className="text-[var(--muted)]">Invoice number</span>
-              <strong className="mt-1 block">Assigned automatically</strong>
-            </div>
-            <label className="text-sm font-medium">
-              Sale date
-              <Input
-                className="mt-2"
-                type="date"
-                {...form.register("soldAt")}
-              />
-            </label>
+  const completion = (
+    <div className="sale-complete flex items-center justify-between gap-3 border-t border-[var(--border)] bg-[var(--page)] py-2">
+          <div className="sale-completion-figures text-xs text-[var(--muted)]">
+            Total{" "}
+            <strong className="sale-completion-total block font-semibold leading-tight text-[var(--ink)] tabular-nums">
+              {formatSaleMoney(grandTotal, symbol)}
+            </strong>
+            <span className="sale-completion-balance">{change > 0 ? "Change" : "Due"} <strong>{formatSaleMoney(change > 0 ? change : due, symbol)}</strong></span>
           </div>
-          {values.customer?.email && (
-            <label className="mt-4 flex min-h-12 items-center gap-3 rounded-xl bg-[var(--surface-warm)] px-4 text-sm">
-              <input
-                className="size-4 accent-[var(--accent)]"
-                type="checkbox"
-                {...form.register("emailInvoice")}
-              />
-              <span>
-                Email invoice to <strong>{values.customer.email}</strong>
-              </span>
-            </label>
-          )}
-        </section>
-
-        {fields.fields.map((field, itemIndex) => {
-          const item = values.items?.[itemIndex];
-          const selectedProduct = products.data?.find(
-            (product) => product.productId === item?.productId,
-          );
-          const selectedProductIds = new Set(
-            (values.items ?? [])
-              .filter((_, index) => index !== itemIndex)
-              .map((candidate) => candidate.productId),
-          );
-          const availableProductOptions = productOptions.filter(
-            (option) => !selectedProductIds.has(option.value),
-          );
-          const baseColorOptions = (products.data ?? [])
-            .filter(
-              (product) =>
-                product.productId === item?.productId &&
-                product.availableRolls > 0,
-            )
-            .map((product) => ({
-              value: product.variantId,
-              label: product.color || "Unnamed color",
-              description: `${product.availableRolls} Rolls · ${product.availableMeter.toLocaleString()} Meter available`,
-              keywords: [product.color || "", product.description || ""],
-            }));
-          const error = form.formState.errors.items?.[itemIndex];
-          return (
-            <section
-              key={field.id}
-              className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5"
-            >
-              <div className="flex justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--accent)]">
-                    Item {itemIndex + 1}
-                  </p>
-                  <h2 className="mt-1 font-semibold">
-                    {selectedProduct?.itemCode ||
-                      "Choose an item"}
-                  </h2>
-                  {selectedProduct?.description && (
-                    <p className="text-xs text-[var(--muted)]">
-                      {selectedProduct.description}
-                    </p>
-                  )}
-                </div>
-                {fields.fields.length > 1 && (
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => fields.remove(itemIndex)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                )}
-              </div>
-              <div className="mt-4">
-                <SearchablePicker
-                  label="Search item"
-                  placeholder="Search item code or description..."
-                  searchPlaceholder="Search stock..."
-                  options={availableProductOptions}
-                  value={item?.productId}
-                  onChange={(value) => selectProduct(itemIndex, value)}
-                />
-                {error?.productId && (
-                  <span className="text-xs text-[var(--danger)]">
-                    {error.productId.message}
-                  </span>
-                )}
-              </div>
-              <div className="mt-5 border-t border-[var(--border)] pt-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">Colors being sold</h3>
-                  <span className="text-xs text-[var(--muted)]">
-                    {item?.colors?.length ?? 0} color(s)
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {(item?.colors ?? []).map((color, colorIndex) => {
-                    const selectedColor = products.data?.find(
-                      (product) => product.variantId === color.variantId,
-                    );
-                    const colorError = error?.colors?.[colorIndex];
-                    const selectedVariantIds = new Set(
-                      (item?.colors ?? [])
-                        .filter((_, index) => index !== colorIndex)
-                        .map((candidate) => candidate.variantId),
-                    );
-                    const colorOptions = baseColorOptions.filter(
-                      (option) => !selectedVariantIds.has(option.value),
-                    );
-                    return (
-                      <div
-                        key={colorIndex}
-                        className="rounded-lg bg-[var(--surface-subtle)] p-3"
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">
-                            Color {colorIndex + 1}
-                          </p>
-                          {(item?.colors?.length ?? 0) > 1 && (
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              onClick={() =>
-                                removeColor(itemIndex, colorIndex)
-                              }
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
-                          )}
-                        </div>
-                        <div className="mt-2">
-                          <SearchablePicker
-                            label="Color"
-                            placeholder={
-                              item?.productId
-                                ? "Choose a color..."
-                                : "Choose an item first"
-                            }
-                            searchPlaceholder="Search colors..."
-                            options={colorOptions}
-                            value={color.variantId}
-                            onChange={(value) =>
-                              selectColor(itemIndex, colorIndex, value)
-                            }
-                          />
-                          {colorError?.variantId && (
-                            <span className="text-xs text-[var(--danger)]">
-                              {colorError.variantId.message}
-                            </span>
-                          )}
-                        </div>
-                        {selectedColor && (
-                          <div className="mt-2 flex items-center gap-3 rounded-lg bg-[var(--surface-warm)] px-3 py-2">
-                            <div className="text-xs text-[var(--muted)]">
-                              <p className="font-medium text-[var(--foreground)]">
-                                {selectedColor.color}
-                              </p>
-                              <p>
-                                Available:{" "}
-                                <strong>
-                                  {selectedColor.availableRolls} Rolls
-                                </strong>{" "}
-                                · {selectedColor.availableMeter.toLocaleString()} Meter
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                          <label className="text-sm font-medium">
-                            Rolls Sold *
-                            <Input
-                              className="mt-1 h-9 bg-white"
-                              type="number"
-                              min="1"
-                              max={selectedColor?.availableRolls}
-                              {...form.register(
-                                `items.${itemIndex}.colors.${colorIndex}.rollsSold`,
-                                { valueAsNumber: true },
-                              )}
-                            />
-                            {colorError?.rollsSold && (
-                              <span className="text-xs text-[var(--danger)]">
-                                {colorError.rollsSold.message}
-                              </span>
-                            )}
-                          </label>
-                          <label className="text-sm font-medium">
-                            Meter{" "}
-                            <span className="font-normal text-[var(--muted)]">
-                              (optional)
-                            </span>
-                            <Input
-                              className="mt-1 h-9 bg-white"
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="Leave blank"
-                              {...form.register(
-                                `items.${itemIndex}.colors.${colorIndex}.meterSold`,
-                                { setValueAs: numberValue },
-                              )}
-                            />
-                            {colorError?.meterSold && (
-                              <span className="text-xs text-[var(--danger)]">
-                                {colorError.meterSold.message}
-                              </span>
-                            )}
-                          </label>
-                          <label className="col-span-2 text-sm font-medium">
-                            Price / Amount *
-                            <div className="relative mt-1">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]">
-                                {symbol}
-                              </span>
-                              <Input
-                                className="h-9 bg-white pl-8"
-                                type="number"
-                                min="0.01"
-                                step="0.01"
-                                {...form.register(
-                                  `items.${itemIndex}.colors.${colorIndex}.lineTotal`,
-                                  { valueAsNumber: true },
-                                )}
-                              />
-                            </div>
-                            {colorError?.lineTotal && (
-                              <span className="text-xs text-[var(--danger)]">
-                                {colorError.lineTotal.message}
-                              </span>
-                            )}
-                          </label>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="mt-3 w-full border-dashed"
-                  disabled={
-                    !item?.productId ||
-                    (item.colors ?? []).filter((color) => color.variantId)
-                      .length >= baseColorOptions.length
-                  }
-                  onClick={() => addColor(itemIndex)}
-                >
-                  <Plus className="size-4" /> Add another color
-                </Button>
-              </div>
-            </section>
-          );
-        })}
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full border-dashed"
-          onClick={() => fields.append(blankItem())}
-        >
-          <Plus className="size-4" /> Add another item
-        </Button>
-        <section className="rounded-2xl bg-[var(--sidebar)] p-5">
-          <h2 className="font-semibold">Payment summary</h2>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-[var(--muted)]">Subtotal</span>
-                <strong>
-                  {symbol}
-                  {subtotal.toLocaleString()}
-                </strong>
-              </div>
-              <label className="flex items-center justify-between gap-4">
-                <span className="text-[var(--muted)]">Discount</span>
-                <Input
-                  className="h-10 w-36 bg-white text-right"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  {...form.register("discountAmount", {
-                    setValueAs: numberValue,
-                  })}
-                />
-              </label>
-              <div className="flex justify-between border-t border-[var(--border-strong)] pt-3 text-base">
-                <span>Grand Total</span>
-                <strong>
-                  {symbol}
-                  {grandTotal.toLocaleString()}
-                </strong>
-              </div>
-            </div>
-            <div className="space-y-3 text-sm">
-              <label>
-                <span className="font-medium">
-                  Customer Gave / Amount Received
-                </span>
-                <Input
-                  className="mt-2 bg-white"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  {...form.register("receivedAmount", {
-                    setValueAs: numberValue,
-                  })}
-                />
-              </label>
-              <div>
-                <span className="font-medium">Payment method</span>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      ["CASH", "Cash"],
-                      ["BANK", "Bank"],
-                      ["MOBILE_BANKING", "Mobile Banking"],
-                      ["OTHER", "Other"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      type="button"
-                      key={value}
-                      onClick={() => form.setValue("paymentMethod", value)}
-                      className={`min-h-11 rounded-xl border bg-white px-2 text-xs ${values.paymentMethod === value ? "border-[var(--accent)] ring-1 ring-[var(--accent)]" : "border-[var(--border)]"}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-xl bg-white p-3">
-                  <span className="text-xs text-[var(--muted)]">Paid</span>
-                  <strong className="mt-1 block">
-                    {symbol}
-                    {paid.toLocaleString()}
-                  </strong>
-                </div>
-                <div className="rounded-xl bg-white p-3">
-                  <span className="text-xs text-[var(--muted)]">Due</span>
-                  <strong className="mt-1 block text-[var(--warning)]">
-                    {symbol}
-                    {due.toLocaleString()}
-                  </strong>
-                </div>
-                <div className="rounded-xl bg-white p-3">
-                  <span className="text-xs text-[var(--muted)]">Change</span>
-                  <strong className="mt-1 block">
-                    {symbol}
-                    {change.toLocaleString()}
-                  </strong>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-        <label className="block rounded-xl border border-[var(--border)] bg-white p-4 text-sm font-medium shadow-[var(--shadow-card)]">
-          Notes{" "}
-          <span className="font-normal text-[var(--muted)]">(optional)</span>
-          <Input className="mt-2" {...form.register("notes")} />
-        </label>
-        <div className="sticky bottom-20 z-20 rounded-xl border border-[var(--border)] bg-white/95 p-3 shadow-[var(--shadow-float)] backdrop-blur lg:bottom-4">
           <Button
+            form="afia-new-sale"
             variant="premium"
-            className="w-full"
-            disabled={save.isPending || subtotal <= 0}
+            className="shrink-0 px-3 sm:px-5"
+            disabled={
+              save.isPending ||
+              products.isPending ||
+              products.isError ||
+              !productOptions.length ||
+              subtotal <= 0 ||
+              subtotal > MAX_SALE_AMOUNT ||
+              inventoryErrors.size > 0
+            }
           >
             {save.isPending ? (
               <LoaderCircle className="size-4 animate-spin" />
-            ) : (
-              <ReceiptText className="size-4" />
-            )}{" "}
+            ) : null}{" "}
             Complete Sale
           </Button>
         </div>
+  );
+
+  return (
+    <div ref={workspaceRef} className={`new-sale mx-auto max-w-350 px-3 pt-3 sm:px-5 lg:px-6 ${wideWorkspace ? "sale-wide" : ""}`}>
+      <div className="sale-container">
+      <header className="sale-header">
+        <Link
+          to="/sales"
+          aria-label="Back to Sales"
+          className="flex size-10 items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-warm)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        >
+          <ArrowLeft aria-hidden="true" className="size-4" />
+        </Link>
+        <h1 className="text-xl font-semibold tracking-tight">New Sale</h1>
+            <label className="sale-date min-w-0 text-xs font-medium">
+              <span>Sale Date</span>
+              <Input
+                form="afia-new-sale"
+                disabled={save.isPending}
+                className="h-10"
+                type="date"
+                aria-invalid={Boolean(form.formState.errors.soldAt)}
+                aria-describedby="sale-date-error"
+                {...form.register("soldAt")}
+              />
+              {form.formState.errors.soldAt && (
+                <span
+                  role="alert"
+                  id="sale-date-error"
+                  className="mt-1 block text-xs text-[var(--danger)]"
+                >
+                  Choose a sale date.
+                </span>
+              )}
+            </label>
+      </header>
+      <form
+        id="afia-new-sale"
+        onSubmit={form.handleSubmit(submit)}
+        className="sale-form space-y-3"
+        aria-busy={save.isPending}
+      >
+        <fieldset disabled={save.isPending} className="sale-workspace min-w-0">
+          <section className="sale-meta border-b border-[var(--border)]">
+            <div className="sale-customer min-w-0">
+              {selectedCustomer ? (
+                <div className="sale-customer-summary">
+                  <div className="sale-customer-details min-w-0">
+                    <p className="sale-caption">Customer</p>
+                    <p className="sale-identity">
+                      {selectedCustomer.name}
+                      {selectedCustomer.phone && <span className="sale-customer-phone"> · {selectedCustomer.phone}</span>}
+                    </p>
+                    <p className="sale-outstanding text-xs text-[var(--muted)]">
+                      Previous Due{" "}
+                      <strong className="ml-1 font-medium text-[var(--ink)] tabular-nums">
+                        {formatSaleMoney(previousOutstanding, symbol)}
+                      </strong>
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 text-xs text-[var(--accent)]"
+                    onClick={() => {
+                      setSelectedCustomer(null);
+                      form.setValue("customer.id", undefined);
+                    }}
+                  >
+                    Change
+                  </Button>
+                </div>
+              ) : (
+                <div className="sale-customer-entry">
+                  <SaleCustomerEntry
+                    validateDraft={() => form.trigger("customer")}
+                    values={
+                      (values.customer ?? {
+                        name: "",
+                        email: "",
+                        phone: "",
+                        address: "",
+                      }) as InlinePartyValues
+                    }
+                    suggestions={customerSuggestions}
+                    searching={customers.isFetching}
+                    symbol={symbol}
+                    nameError={form.formState.errors.customer?.name?.message}
+                    phoneError={form.formState.errors.customer?.phone?.message}
+                    onSearch={setCustomerSearch}
+                    onFieldChange={(field, value) => {
+                      save.reset();
+                      if (selectedCustomer) {
+                        setSelectedCustomer(null);
+                        form.setValue("customer.id", undefined);
+                      }
+                      form.setValue(`customer.${field}`, value, {
+                        shouldValidate:
+                          field === "name" ||
+                          field === "email" ||
+                          field === "phone",
+                      });
+                    }}
+                    onSelect={(party) => {
+                      const selected = customers.data?.find(
+                        (x) => x.id === party.id,
+                      );
+                      if (!selected) return;
+                      selectCustomer(selected);
+                    }}
+                    onClear={() => {
+                      setSelectedCustomer(null);
+                      form.setValue("customer.id", undefined);
+                    }}
+                  />
+                </div>
+              )}
+              {save.error instanceof CustomerPhoneConflictError && (
+                <div
+                  role="alert"
+                  className="mt-3 border-l-2 border-[var(--warning)] pl-3 text-sm"
+                >
+                  <p>{save.error.message}</p>
+                  {!save.error.existingCustomer.archived ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-2"
+                      disabled={useExistingCustomer.isPending}
+                      onClick={() => {
+                        if (save.error instanceof CustomerPhoneConflictError)
+                          useExistingCustomer.mutate(
+                            save.error.existingCustomer.id,
+                          );
+                      }}
+                    >
+                      {useExistingCustomer.isPending
+                        ? "Loading customer…"
+                        : `Use ${save.error.existingCustomer.name}`}
+                    </Button>
+                  ) : (
+                    <Link
+                      className="mt-2 block text-[var(--accent)] underline"
+                      to={`/customers/${save.error.existingCustomer.id}`}
+                    >
+                      View existing customer
+                    </Link>
+                  )}
+                </div>
+              )}
+            </div>
+            {values.customer?.email && (
+              <label className="sale-email flex min-h-10 min-w-0 items-center gap-2 text-xs">
+                <input
+                  className="size-4 accent-[var(--accent)]"
+                  type="checkbox"
+                  {...form.register("emailInvoice")}
+                />
+                <span>
+                  Email invoice{" "}
+                  <span className="sr-only">to {values.customer.email}</span>
+                </span>
+              </label>
+            )}
+          </section>
+
+          <div className="sale-worksheet">
+          {products.isPending && (
+            <p
+              role="status"
+              className="animate-pulse py-3 text-sm text-[var(--muted)]"
+            >
+              Loading available stock…
+            </p>
+          )}
+          {products.isError && (
+            <div role="alert" className="text-sm text-[var(--danger)]">
+              Could not load inventory.{" "}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => products.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
+          {products.isSuccess && !productOptions.length && (
+            <p className="py-3 text-sm text-[var(--muted)]">
+              No Rolls available.{" "}
+              <Link
+                to="/purchases/new"
+                className="text-[var(--accent)] underline"
+              >
+                Receive a purchase
+              </Link>{" "}
+              to add stock.
+            </p>
+          )}
+          {fields.fields.map((field, itemIndex) => (
+            <SaleItemGroup
+              key={field.id}
+              itemKey={field.id}
+              itemIndex={itemIndex}
+              items={values.items ?? []}
+              products={products.data ?? []}
+              productOptions={productOptions}
+              form={form}
+              symbol={symbol}
+              canRemove={fields.fields.length > 1}
+              inventoryErrors={inventoryErrors}
+              selectProduct={(value) => selectProduct(itemIndex, value)}
+              selectColor={(index, value) =>
+                selectColor(itemIndex, index, value)
+              }
+              addColor={() => addColor(itemIndex)}
+              removeColor={(index) => removeColor(itemIndex, index)}
+              removeItem={() => fields.remove(itemIndex)}
+            />
+          ))}
+          <Button
+            type="button"
+            variant="ghost"
+            className="sale-add-action px-2 text-[var(--accent)]"
+            onClick={() => {
+              const index = fields.fields.length;
+              fields.append(blankItem(), { shouldFocus: false });
+              requestAnimationFrame(() => document.getElementById(`sale-item-${index}`)?.focus());
+            }}
+          >
+            <Plus className="size-4" /> Add item
+          </Button>
+          </div>
+          <div className="sale-settlement">
+          <SalePaymentPanel
+            form={form}
+            symbol={symbol}
+            subtotal={subtotal}
+            total={grandTotal}
+            paid={paid}
+            due={due}
+            change={change}
+            paymentMethod={values.paymentMethod ?? "CASH"}
+          />
+          {selectedCustomer && <p className="py-2 text-xs text-[var(--muted)]">Total Due After Sale <strong className="ml-1 text-[var(--ink)] tabular-nums">{formatSaleMoney(Math.round((previousOutstanding + due) * 100) / 100, symbol)}</strong></p>}
+          <div className="sale-notes">
+            {notesOpen ? <label className="block text-xs font-medium">Notes
+              <Input autoFocus className="mt-1" {...notesField} onBlur={(event) => { void notesField.onBlur(event); setNotesOpen(false); }} />
+            </label> : <Button type="button" variant="ghost" onClick={() => setNotesOpen(true)}>
+              {values.notes ? <span className="truncate">Notes: {values.notes}</span> : "+ Notes"}
+            </Button>}
+          </div>
+        {subtotal > MAX_SALE_AMOUNT && (
+          <p role="alert" className="text-sm text-[var(--danger)]">
+            Sale subtotal exceeds the supported limit.
+          </p>
+        )}
+        {save.error && !(save.error instanceof CustomerPhoneConflictError) && (
+          <p role="alert" className="text-sm text-[var(--danger)]">
+            {save.error.message} Review the entry and try again.
+          </p>
+        )}
+          {wideWorkspace && completion}
+          </div>
+        </fieldset>
       </form>
+      </div>
+      {!wideWorkspace && completion}
     </div>
   );
 }

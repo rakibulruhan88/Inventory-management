@@ -22,7 +22,7 @@ const karim: PartyRecord = {
   address: 'Chattogram',
 };
 
-describe('inline customer and supplier resolution', () => {
+describe('inline supplier resolution', () => {
   it('normalizes names, email and phone', () => {
     expect(
       normalizePartyInput({
@@ -42,9 +42,9 @@ describe('inline customer and supplier resolution', () => {
     { name: 'rahim traders' },
     { name: 'Different', email: ' ACCOUNTS@RAHIM.COM ' },
     { name: 'Different', phone: '017-123 45678' },
-  ])('reuses a customer by an exact normalized identifier', (party) => {
+  ])('reuses a supplier contact by an exact normalized identifier', (party) => {
     const input = normalizePartyInput(party);
-    expect(resolvePartyMatch(input, [rahim], 'customer')?.id).toBe('rahim');
+    expect(resolvePartyMatch(input, [rahim], 'supplier')?.id).toBe('rahim');
   });
 
   it.each([
@@ -58,7 +58,7 @@ describe('inline customer and supplier resolution', () => {
 
   it('returns no match for a genuinely new party', () => {
     const input = normalizePartyInput({ name: 'New Business' });
-    expect(resolvePartyMatch(input, [rahim], 'customer')).toBeUndefined();
+    expect(resolvePartyMatch(input, [rahim], 'supplier')).toBeUndefined();
   });
 
   it('uses an explicitly selected existing party', () => {
@@ -74,7 +74,7 @@ describe('inline customer and supplier resolution', () => {
       email: rahim.email ?? undefined,
       phone: karim.phone ?? undefined,
     });
-    expect(() => resolvePartyMatch(input, [rahim, karim], 'customer')).toThrow(
+    expect(() => resolvePartyMatch(input, [rahim, karim], 'supplier')).toThrow(
       ConflictException,
     );
   });

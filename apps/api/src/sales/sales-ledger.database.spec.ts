@@ -16,6 +16,9 @@ describe('sales ledger and customer account PostgreSQL reads', () => {
   let client: PrismaClient;
   let prisma: PrismaService;
   const tables = [
+    'CustomerOpeningBalance',
+    'CustomerPaymentReceipt',
+    'CustomerPaymentAllocation',
     'Customer',
     'Sale',
     'Payment',
