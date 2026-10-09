@@ -9,9 +9,9 @@ import { AuthContext, useAuth } from "./auth-context";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  const me = useQuery({ queryKey: ["auth"], queryFn: getMe, retry: false, networkMode: "always", refetchInterval: 30000, refetchOnWindowFocus: "always" });
+  const me = useQuery({ queryKey: ["auth"], queryFn: ({ signal }) => getMe(signal), retry: false, networkMode: "always", refetchInterval: 30000, refetchOnWindowFocus: "always" });
   useEffect(() => {
-    const clear = () => { queryClient.removeQueries({ predicate: query => query.queryKey[0] !== "auth" }); queryClient.setQueryData(["auth"], null); };
+    const clear = () => { queryClient.removeQueries({ predicate: query => query.queryKey[0] !== "auth" }); queryClient.setQueryData(["auth"], { user: null }); };
     window.addEventListener("afia:unauthorized", clear);
     return () => window.removeEventListener("afia:unauthorized", clear);
   }, [queryClient]);
@@ -43,9 +43,10 @@ export function SignOutButton({ compact = false }: { compact?: boolean }) {
   const navigate = useNavigate();
   const mutation = useMutation({
     mutationFn: logout,
-    onSuccess: () => {
-      queryClient.clear();
-      queryClient.setQueryData(["auth"], null);
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: ["auth"] });
+      queryClient.removeQueries({ predicate: query => query.queryKey[0] !== "auth" });
+      queryClient.setQueryData(["auth"], { user: null });
       navigate("/login");
       toast.success("Signed out");
     },

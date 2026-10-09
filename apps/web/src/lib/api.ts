@@ -268,9 +268,9 @@ export function login(input: LoginRequest) {
 export function logout() {
   return apiRequest<{ signedOut: true }>("/auth/logout", { method: "POST" });
 }
-export async function getMe(): Promise<{ user: AuthUser | null }> {
+export async function getMe(signal?: AbortSignal): Promise<{ user: AuthUser | null }> {
   try {
-    return await apiRequest<{ user: AuthUser }>("/auth/me", { signal: AbortSignal.timeout(10000) });
+    return await apiRequest<{ user: AuthUser }>("/auth/me", { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000) });
   } catch (error) {
     if (error instanceof ApiResponseError && error.status === 401) return { user: null };
     throw error;

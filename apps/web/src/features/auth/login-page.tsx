@@ -1,7 +1,7 @@
 import { canOpenPage, firstAccessiblePage } from "@afia/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, ChevronDown, Eye, EyeOff, HelpCircle, KeyRound, LoaderCircle, LockKeyhole, Package, ReceiptText, UserRound, UsersRound, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,6 @@ const passwordError = (value: string) => value.length >= 8 ? undefined : value ?
 
 export function LoginPage() {
   const auth = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [identifier, setIdentifier] = useState("");
@@ -34,11 +33,12 @@ export function LoginPage() {
   }, []);
   const mutation = useMutation({
     mutationFn: login,
-    onSuccess: (data) => {
-      queryClient.clear();
+    onSuccess: async (data) => {
+      // Preserve the active auth observer and stop an older session check from
+      // replacing the newly signed-in user. Navigation follows the auth context.
+      await queryClient.cancelQueries({ queryKey: ["auth"] });
+      queryClient.removeQueries({ predicate: query => query.queryKey[0] !== "auth" });
       queryClient.setQueryData(["auth"], data);
-      const from = (location.state as { from?: string } | null)?.from;
-      navigate(from && canOpenPage(data.user, from) ? from : firstAccessiblePage(data.user), { replace: true });
     },
   });
   const busy = auth.loading || mutation.isPending || mutation.isSuccess;
@@ -52,7 +52,10 @@ export function LoginPage() {
     mutation.mutate({ identifier, password });
   };
   const checkCapsLock = (event: KeyboardEvent<HTMLInputElement>) => setCapsLock(event.getModifierState("CapsLock"));
-  if (auth.user) return <Navigate to={firstAccessiblePage(auth.user)} replace />;
+  if (auth.user) {
+    const from = (location.state as { from?: string } | null)?.from;
+    return <Navigate to={from && canOpenPage(auth.user, from) ? from : firstAccessiblePage(auth.user)} replace />;
+  }
 
   return <main className="login-page">
     <header className="login-page-header"><div className="login-wordmark"><span className="login-monogram" aria-hidden="true">A<span>·</span></span><div><strong>Afia Leather</strong><span>Store workspace</span></div></div><p>Bangladesh <span aria-hidden="true">/</span> ৳ BDT</p></header>
