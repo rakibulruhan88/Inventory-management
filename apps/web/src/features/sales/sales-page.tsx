@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { useQuery } from "@tanstack/react-query";
 import type { SalesLedgerQuery } from "@afia/contracts";
 import { Link, useSearchParams } from "react-router-dom";
@@ -43,11 +44,11 @@ export function SalesPage() {
             Customer sales and invoice balances.
           </p>
         </div>
-        <Button asChild>
+        <Permit permission="sales.create"><Button asChild>
           <Link to="/sales/new">
             <Plus className="size-4" /> New Sale
           </Link>
-        </Button>
+        </Button></Permit>
       </header>
       <div className="mt-5 flex items-center gap-2">
         <label className="relative min-w-0 flex-1">

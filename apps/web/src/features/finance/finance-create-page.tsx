@@ -1,3 +1,4 @@
+import { hasPermission } from "@afia/contracts";
 import { ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { financeLabels, type ManualFinanceType } from "@afia/contracts";
@@ -15,7 +16,7 @@ const explanations: Record<ManualFinanceType, string> = {
 };
 export function FinanceCreatePage({ type }: { type: ManualFinanceType }) {
   const navigate = useNavigate(),
-    canWrite = useAuth().user?.role === "OWNER";
+    canWrite = hasPermission(useAuth().user, "finance.create");
   return (
     <div className="finance-page">
       <Link to="/cashbook" className="finance-back">
@@ -31,7 +32,7 @@ export function FinanceCreatePage({ type }: { type: ManualFinanceType }) {
       </header>
       <FinanceNavigation />
       {!canWrite ? (
-        <div className="finance-feedback">Only the owner can save entries.</div>
+        <div className="finance-feedback">Ask your admin to enable money entry access.</div>
       ) : (
         <div className="finance-form-layout">
           <section className="finance-form-panel">

@@ -1,3 +1,4 @@
+import { hasPermission } from "@afia/contracts";
 import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
@@ -42,6 +43,7 @@ export function FinanceDocument({
         number={e.id}
         numberLabel="Entry ID"
         date={e.occurredAt}
+        creatorName={e.creatorName}
       />
       {e.voidedAt && (
         <p className="document-void">
@@ -109,7 +111,7 @@ export function FinanceDocument({
 export function FinanceDetailPage() {
   const { entryId = "" } = useParams(),
     printable = useRef<HTMLDivElement>(null),
-    canWrite = useAuth().user?.role === "OWNER";
+    canWrite = hasPermission(useAuth().user, "finance.void");
   const q = useQuery({
       queryKey: ["finance", "entry", entryId],
       queryFn: () => getFinanceEntry(entryId),

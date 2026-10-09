@@ -38,6 +38,7 @@ export class AuthService implements OnModuleInit {
     const user = await this.prisma.user.findFirst({
       where: {
         isActive: true,
+        deletedAt: null,
         OR: [
           { username: { equals: normalized, mode: 'insensitive' } },
           { email: { equals: normalized, mode: 'insensitive' } },
@@ -52,6 +53,8 @@ export class AuthService implements OnModuleInit {
       username: user.username,
       email: user.email,
       role: user.role,
+      permissions: user.permissions as AuthUser["permissions"],
+      sessionVersion: user.sessionVersion,
     };
     const token = await this.jwt.signAsync(payload);
     await this.prisma.$transaction((tx) => appendActivity(tx, { action: 'SIGNED_IN', entityType: 'User', entityId: user.id, actorId: user.id, metadata: { label: user.name } }));
@@ -59,7 +62,7 @@ export class AuthService implements OnModuleInit {
   }
 
   async recordSignOut(userId: string) {
-    await this.prisma.$transaction((tx) => appendActivity(tx, { action: 'SIGNED_OUT', entityType: 'User', entityId: userId, actorId: userId }));
+    await this.prisma.$transaction(async tx => { await tx.user.update({ where: { id: userId }, data: { sessionVersion: { increment: 1 } } }); await appendActivity(tx, { action: 'SIGNED_OUT', entityType: 'User', entityId: userId, actorId: userId }); });
   }
   async account(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -105,7 +108,7 @@ export class AuthService implements OnModuleInit {
     await auditMutation(this.prisma, { action: 'PASSWORD_CHANGED', entityType: 'User', entityId: userId, actorId: userId }, async (tx) => {
     await tx.user.update({
       where: { id: userId },
-      data: { passwordHash: await hash(newPassword, 12) },
+      data: { passwordHash: await hash(newPassword, 12), sessionVersion: { increment: 1 } },
     })
       return { passwordChanged: true };
     });;

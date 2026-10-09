@@ -14,6 +14,6 @@ export function sessionCookieOptions(): CookieOptions {
   };
 }
 export function sessionJwtOptions(config: ConfigService) {
-  // Device sessions have no application time limit. Logout clears the device cookie.
+  // Device sessions have no application time limit. Logout clears the device cookie and revokes issued sessions.
   return { secret: config.get<string>('JWT_SECRET', 'development-only-change-me') };
 }

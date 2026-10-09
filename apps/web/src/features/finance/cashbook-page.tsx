@@ -1,3 +1,5 @@
+import { Permit } from "@/features/auth/permit";
+import { hasPermission } from "@afia/contracts";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useLocation, useSearchParams } from "react-router-dom";
@@ -200,7 +202,7 @@ export function CashbookPage({ report = false }: { report?: boolean }) {
     : path === "/cashbook"
       ? "Cashbook"
       : (section?.label ?? "Cashbook");
-  const canWrite = useAuth().user?.role === "OWNER";
+  const canWrite = hasPermission(useAuth().user, "finance.create");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const selectedDate = params.get("date") ?? (report ? "month" : "all");
   const fixedType = isMoneyIn ? undefined : sectionType;
@@ -310,9 +312,9 @@ export function CashbookPage({ report = false }: { report?: boolean }) {
         {!report && (
           <div className="finance-header-actions">
             {(mode === "all" || mode === "income") && (
-              <Button asChild variant="outline">
+              <Permit permission="payments.receive"><Button asChild variant="outline">
                 <Link to="/cashbook/receive-payment">Receive Payment</Link>
-              </Button>
+              </Button></Permit>
             )}
             {canWrite && (
               <Button asChild>
@@ -574,7 +576,7 @@ export function CashbookPage({ report = false }: { report?: boolean }) {
       )}
       {!canWrite && !report && (
         <p className="finance-footnote">
-          You can view records. Ask the owner to add or void a payment.
+          You can view records. Ask your admin to enable money entry access.
         </p>
       )}
     </div>

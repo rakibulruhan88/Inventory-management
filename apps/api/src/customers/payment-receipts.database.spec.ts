@@ -1,3 +1,4 @@
+import { expandPermissions } from '@afia/contracts';
 import { InventoryService } from '../inventory/inventory.service.js';
 import { PaymentsController } from './payments.controller.js';
 import { readCustomersWithDue, readGlobalReceipts } from './payments-ledger.js';
@@ -93,7 +94,7 @@ describe('customer payment receipt PostgreSQL accounting and security', () => {
     ).id;
     actorId = (
       await db.user.create({
-        data: { name: 'Staff', username: randomUUID(), passwordHash: 'test' },
+        data: { name: 'Staff', username: randomUUID(), passwordHash: 'test', permissions: expandPermissions(['payments.receive', 'payments.opening', 'sales.view']) },
       })
     ).id;
   });

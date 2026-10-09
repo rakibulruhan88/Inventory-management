@@ -1,3 +1,4 @@
+import { useAuth } from "@/features/auth/auth-context";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -15,9 +16,11 @@ import { settingsSchema, settingsSections, type SettingsFormData, type SettingsS
 import "./settings.css";
 
 export function SettingsPage() {
+  const owner = useAuth().user?.role === "OWNER";
+  const availableSections = settingsSections.filter(item => owner || ["account", "app"].includes(item.id));
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const section: SettingsSectionId = settingsSections.find((item) => item.id === params.get("section"))?.id ?? "business";
+  const section: SettingsSectionId = availableSections.find((item) => item.id === params.get("section"))?.id ?? (owner ? "business" : "account");
   const active = settingsSections.find((item) => item.id === section)!;
   const storeSection = !["account", "app"].includes(section);
   const query = useQuery({ queryKey: ["settings"], queryFn: getSettings });
@@ -71,7 +74,7 @@ export function SettingsPage() {
 
   return <div className="settings-page">
     <header className="settings-page-header"><div><p className="settings-eyebrow">AFIA LEATHER / PREFERENCES</p><h1>Settings</h1><p>Your store, your defaults, your account.</p></div><span className={`settings-header-status ${dirty || accountDirty ? "pending" : ""}`}><i />{dirty || accountDirty ? "Changes pending" : "Store preferences"}</span></header>
-    <div className="settings-workspace"><aside className="settings-sidebar"><div className="settings-sidebar-caption">WORKSPACE SETTINGS</div><nav aria-label="Settings sections">{settingsSections.map(({ id, title, description, icon: Icon, fields }) => {
+    <div className="settings-workspace"><aside className="settings-sidebar"><div className="settings-sidebar-caption">WORKSPACE SETTINGS</div><nav aria-label="Settings sections">{availableSections.map(({ id, title, description, icon: Icon, fields }) => {
       const changed = fields.some((field) => dirtyFields[field]) || (id === "account" && accountDirty);
       const errors = fields.some((field) => form.formState.errors[field]);
       return <button type="button" key={id} className={section === id ? "active" : ""} aria-current={section === id ? "page" : undefined} onClick={() => chooseSection(id)}><Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{description}</small></span>{errors ? <i className="settings-section-dot error" aria-label="Has validation errors" /> : changed ? <i className="settings-section-dot" aria-label="Has unsaved changes" /> : <ChevronRight size={13} aria-hidden="true" />}</button>;

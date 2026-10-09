@@ -77,7 +77,11 @@ export function FinanceEntryForm({
     mutationFn: () => createFinanceEntry(submission.current!),
     onSuccess: async (e) => {
       sessionStorage.removeItem(draftKey);
-      await cache.invalidateQueries({ queryKey: ["finance"] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["finance"] }),
+        cache.invalidateQueries({ queryKey: ["suppliers"] }),
+        cache.invalidateQueries({ queryKey: ["supplier"] }),
+      ]);
       onSaved(e.id);
     },
     onError: (e: Error) => {

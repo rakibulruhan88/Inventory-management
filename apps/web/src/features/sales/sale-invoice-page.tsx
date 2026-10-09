@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -12,7 +13,7 @@ import {
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useReactToPrint } from "react-to-print";
-import type { SaleInvoice } from "@afia/contracts";
+import { invoiceSummaryRows, type SaleInvoice } from "@afia/contracts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -54,6 +55,7 @@ export function InvoiceSheet({ invoice }: { invoice: SaleInvoice }) {
         title="Invoice"
         number={invoice.invoiceNumber}
         date={invoice.soldAt}
+        creatorName={invoice.creatorName}
       />
       {invoice.status === "VOIDED" && (
         <p className="document-void">
@@ -156,37 +158,11 @@ export function InvoiceSheet({ invoice }: { invoice: SaleInvoice }) {
         <section className="invoice-totals">
           <h2>Current Sale</h2>
           <dl>
-            <AmountRow label="Subtotal">
-              {money(invoice, invoice.subtotal)}
-            </AmountRow>
-            <AmountRow label="Discount">
-              {money(invoice, invoice.discountAmount)}
-            </AmountRow>
-            <AmountRow label="Invoice Total" strong>
-              {money(invoice, invoice.totalAmount)}
-            </AmountRow>
-            <AmountRow label="Received at Sale">
-              {money(invoice, invoice.receivedAmount)}
-            </AmountRow>
-            <AmountRow label="Paid at Sale">
-              {money(invoice, amounts.paidAtSale)}
-            </AmountRow>
-            {amounts.laterPaid > 0 && (
-              <AmountRow label="Later Payments">
-                {money(invoice, amounts.laterPaid)}
+            {invoiceSummaryRows(invoice).map((row) => (
+              <AmountRow key={row.label} label={row.label} strong={row.strong}>
+                {money(invoice, row.value)}
               </AmountRow>
-            )}
-            <AmountRow label="Paid">
-              {money(invoice, invoice.paidAmount)}
-            </AmountRow>
-            <AmountRow label="Invoice Due" strong>
-              {money(invoice, invoice.dueAmount)}
-            </AmountRow>
-            {invoice.changeAmount > 0 && (
-              <AmountRow label="Change Returned">
-                {money(invoice, invoice.changeAmount)}
-              </AmountRow>
-            )}
+            ))}
           </dl>
           {salePayment && (
             <div className="document-payment">
@@ -353,7 +329,7 @@ export function SaleInvoicePage() {
             </Link>
           </Button>
           {invoice.currentCustomerEmail ? (
-            <Button
+            <Permit permission="sales.email"><Button
               variant="outline"
               disabled={email.isPending}
               onClick={() => email.mutate()}
@@ -364,25 +340,25 @@ export function SaleInvoicePage() {
                 : invoice.lastEmailedAt
                   ? "Resend Email"
                   : "Email Invoice"}
-            </Button>
+            </Button></Permit>
           ) : (
-            <Button asChild variant="outline">
+            <Permit permission="customers.manage"><Button asChild variant="outline">
               <Link
                 to={`/customers?search=${encodeURIComponent(invoice.customer.name)}`}
               >
                 Add customer email
               </Link>
-            </Button>
+            </Button></Permit>
           )}
           {invoice.status === "COMPLETED" && (
-            <Button
+            <Permit permission="sales.void"><Button
               variant="outline"
               className="text-[var(--danger)]"
               disabled={invoice.payments.some((p) => p.receiptId)}
               onClick={() => setVoidOpen(true)}
             >
               <Ban className="size-4" /> Void Sale
-            </Button>
+            </Button></Permit>
           )}
           <Button variant="outline" onClick={() => print()}>
             <Printer className="size-4" /> Print Invoice

@@ -1,3 +1,4 @@
+import { expandPermissions } from '@afia/contracts';
 import 'reflect-metadata';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -64,6 +65,7 @@ describe('atomic import receipt and secure original document archive', () => {
         data: {
           name: 'Fixture staff',
           role: 'STAFF',
+          permissions: expandPermissions(['purchases.receive']),
           passwordHash: 'test-only',
         },
       })

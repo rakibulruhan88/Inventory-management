@@ -39,6 +39,7 @@ export function ReceiptSheet({
         title="Payment Receipt"
         number={r.receiptNumber}
         date={r.paidAt}
+        creatorName={r.creatorName}
       />
       <div className="receipt-amount">
         <span>Amount Received</span>

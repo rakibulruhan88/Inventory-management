@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -198,18 +199,18 @@ export function CustomerDetailPage() {
             )}
             <div className="mt-4 flex flex-wrap items-center gap-3">
               {c.totalDue > 0 ? (
-                <Button asChild>
+                <Permit permission="payments.receive"><Button asChild>
                   <Link to={`/customers/${id}/receive-payment`}>
                     Receive Payment
                   </Link>
-                </Button>
+                </Button></Permit>
               ) : (
                 <Button disabled>No due to pay</Button>
               )}
               {!c.openingDue && (
-                <Button asChild variant="outline">
+                <Permit permission="payments.opening"><Button asChild variant="outline">
                   <Link to={`/customers/${id}/opening-due`}>Add Old Due</Link>
-                </Button>
+                </Button></Permit>
               )}
             </div>
           </header>

@@ -1,3 +1,4 @@
+import { canOpenPage, firstAccessiblePage, hasPermission } from "@afia/contracts";
 import { useQuery } from "@tanstack/react-query";
 import {
   History, BarChart3, Boxes, Container, LayoutDashboard, Menu, PackagePlus, PanelLeftClose, PanelLeftOpen,
@@ -24,13 +25,15 @@ const navigation = [
   { to: "/suppliers", label: "Suppliers", icon: Truck },
   { to: "/containers", label: "Containers", icon: Container },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/team", label: "Team & Access", icon: Users },
   { to: "/activity", label: "Activity", icon: History },
 ];
 
 function StoreIdentity({ name, logo }: { name: string; logo?: string | null }) {
+  const { user } = useAuth();
   const [failedLogo, setFailedLogo] = useState<string | null>(null);
   return (
-    <NavLink to="/dashboard" className="desktop-store-identity" aria-label={`${name} store overview`}>
+    <NavLink to={firstAccessiblePage(user)} className="desktop-store-identity" aria-label={`${name} store overview`}>
       <span className="desktop-store-mark">
         {logo && failedLogo !== logo ? <img src={logo} alt="" onError={() => setFailedLogo(logo)} /> : <span aria-hidden="true">{name.slice(0, 1).toUpperCase()}<small>·</small></span>}
       </span>
@@ -42,12 +45,12 @@ function StoreIdentity({ name, logo }: { name: string; logo?: string | null }) {
 const desktopGroups = [
   { label: "Workspace", paths: ["/dashboard", "/inventory", "/purchases", "/sales"] },
   { label: "Money records", paths: ["/payments", "/cashbook", "/reports"] },
-  { label: "Contacts & stock history", paths: ["/customers", "/suppliers", "/containers", "/activity"] },
+  { label: "Contacts & stock history", paths: ["/customers", "/suppliers", "/containers", "/team", "/activity"] },
 ];
 function DesktopNavigation() {
   const { user } = useAuth();
-  return <nav className="desktop-workspace-nav" aria-label="Workspace">{desktopGroups.map((group) => <div className="desktop-nav-group" key={group.label}><p>{group.label}</p>{group.paths.map((path) => {
-    if (path === "/activity" && user?.role !== "OWNER") return null;
+  return <nav className="desktop-workspace-nav" aria-label="Workspace">{desktopGroups.filter(group => group.paths.some(path => canOpenPage(user, path))).map((group) => <div className="desktop-nav-group" key={group.label}><p>{group.label}</p>{group.paths.map((path) => {
+    if (!canOpenPage(user, path)) return null;
     const item = navigation.find((entry) => entry.to === path)!;
     return <NavLink key={item.to} to={item.to} aria-label={item.label} title={item.label} className={({ isActive }) => `desktop-nav-item ${isActive ? "is-active" : ""}`}><item.icon size={17} strokeWidth={1.7} aria-hidden="true" /><span>{item.label}</span><i aria-hidden="true" /></NavLink>;
   })}</div>)}</nav>;
@@ -64,7 +67,7 @@ function WorkspaceNavigation({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
   return (
     <nav aria-label="Workspace" className="space-y-1">
-      {navigation.filter((item) => item.to !== "/activity" || user?.role === "OWNER").map((item) => (
+      {navigation.filter((item) => canOpenPage(user, item.to)).map((item) => (
         <div key={item.to} className={item.to === "/customers" ? "border-t border-[var(--border)] pt-4 mt-4" : ""}>
           <NavLink to={item.to} onClick={onNavigate} className={({ isActive }) =>
             `flex min-h-11 items-center gap-3 rounded-md border-l-2 px-3 text-sm font-medium transition-colors ${isActive ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary-strong)]" : "border-transparent text-[var(--foreground-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--foreground)]"}`
@@ -84,6 +87,7 @@ function WorkspaceNavigation({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [online, setOnline] = useState(navigator.onLine);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarPreference, setSidebarPreference] = useState<"collapsed" | "expanded" | null>(() => {
@@ -159,25 +163,25 @@ export function AppShell({ children }: { children: ReactNode }) {
               {sidebarCollapsed ? <PanelLeftOpen className="size-[18px]" aria-hidden="true" /> : <PanelLeftClose className="size-[18px]" aria-hidden="true" />}
             </Button>
             {section !== "Overview" && <span className="hidden w-36 shrink-0 text-sm font-medium text-[var(--foreground-secondary)] xl:block">{section}</span>}
-            <NavLink to="/dashboard" className="mobile-store-brand" aria-label={`${name} overview`}>
+            <NavLink to={firstAccessiblePage(user)} className="mobile-store-brand" aria-label={`${name} overview`}>
               <span className="mobile-store-mark" aria-hidden="true">{settings.data?.logoUrl ? <img src={settings.data.logoUrl} alt="" /> : name.slice(0, 1).toUpperCase()}</span>
               <span className="mobile-store-copy"><strong title={name}>{name}</strong><small>{section}</small></span>
             </NavLink>
             <div className="min-w-0 shrink-0 md:flex-1 lg:max-w-xl"><GlobalSearch compactMobile /></div>
-            <Button asChild className="ml-auto hidden shrink-0 sm:inline-flex lg:hidden">
+            {hasPermission(user, "sales.create") && <Button asChild className="ml-auto hidden shrink-0 sm:inline-flex lg:hidden">
               <NavLink to="/sales/new"><ReceiptText aria-hidden="true" className="size-4" /> New Sale</NavLink>
-            </Button>
+            </Button>}
           </div>
         </header>
         <main id="workspace-content" tabIndex={-1} className="min-w-0 outline-none">{children}</main>
       </div>
-      <nav aria-label="Quick navigation" className="app-chrome mobile-quick-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border)] bg-[var(--surface)] px-2 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] md:hidden">
+      <nav aria-label="Quick navigation" style={{ gridTemplateColumns: `repeat(${["/dashboard", "/purchases/new", "/sales/new", "/inventory"].filter(path => canOpenPage(user, path)).length + 1}, minmax(0, 1fr))` }} className="app-chrome mobile-quick-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--border)] bg-[var(--surface)] px-2 pt-1 pb-[max(4px,env(safe-area-inset-bottom))] md:hidden">
         {[
           { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
           { to: "/purchases/new", label: "Purchase", icon: PackagePlus },
           { to: "/sales/new", label: "Sale", icon: ReceiptText },
           { to: "/inventory", label: "Inventory", icon: Boxes },
-        ].map((item) => (
+        ].filter(item => canOpenPage(user, item.to)).map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) =>
             `flex min-h-14 flex-col items-center justify-center gap-1 border-t-2 text-[11px] font-medium transition-colors ${isActive ? "border-[var(--primary)] text-[var(--primary-strong)]" : "border-transparent text-[var(--muted)] hover:bg-[var(--surface-muted)]"}`
           }>

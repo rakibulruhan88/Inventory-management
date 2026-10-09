@@ -90,6 +90,7 @@ describe('ledger HTTP authorization and query validation', () => {
     const module = await Test.createTestingModule({
       controllers: [SalesController, CustomersController],
       providers: [
+        { provide: PrismaService, useValue: { ...prisma, user: { findUnique: vi.fn().mockResolvedValue({ id: 'user', name: 'Staff', role: 'STAFF', isActive: true, deletedAt: null, sessionVersion: 0, permissions: ['sales.view', 'customers.view'] }) } } },
         { provide: SalesService, useValue: sales },
         { provide: CustomersService, useValue: customers },
         {

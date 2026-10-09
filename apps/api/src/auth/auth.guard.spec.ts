@@ -10,7 +10,7 @@ describe('account endpoint authentication', () => {
       getClass: vi.fn(),
       switchToHttp: () => ({ getRequest: () => request }),
     };
-    const guard = new AuthGuard(reflector as never, {} as never);
+    const guard = new AuthGuard(reflector as never, {} as never, {} as never);
     await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );

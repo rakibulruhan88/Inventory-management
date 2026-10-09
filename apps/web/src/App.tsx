@@ -1,3 +1,5 @@
+import { Permit } from "@/features/auth/permit";
+import { AccessBoundary } from "@/features/auth/auth";
 import { FinanceCreatePage } from "@/features/finance/finance-create-page";
 import { FinanceDetailPage } from "@/features/finance/finance-detail-page";
 import { CashbookPage } from "@/features/finance/cashbook-page";
@@ -118,7 +120,7 @@ function PurchasesPage() {
     <div className="mx-auto max-w-350 px-4 pb-28 pt-6 md:px-7 lg:px-8 lg:pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-semibold tracking-tight">Purchases</h1><p className="mt-1 text-sm text-[var(--muted)]">Stock receipts, suppliers, and container records.</p></div>
-        <Button asChild><NavLink to="/purchases/new">New Purchase</NavLink></Button>
+        <Permit permission="purchases.receive"><Button asChild><NavLink to="/purchases/new">New Purchase</NavLink></Button></Permit>
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--muted)]">
         <p>{q.isLoading ? "Loading receipts…" : q.isError ? "Receipts unavailable" : `${q.data?.length ?? 0} ${q.data?.length === 1 ? "receipt" : "receipts"}`}</p>
@@ -142,7 +144,7 @@ function PurchasesPage() {
                 <p className="hidden break-words text-right text-sm font-medium tabular-nums md:block">{x.totalRolls}<span className="sr-only"> Rolls</span></p>
                 <p className="hidden break-words text-right text-sm tabular-nums md:block">{x.totalMeters.toLocaleString()}<span className="sr-only"> Meter</span></p>
                 <div className="col-span-2 flex items-center justify-between border-t border-[var(--border)] pt-1 md:col-span-1 md:justify-end md:border-t-0 md:pt-0">
-                  {x.status === "RECEIVED" ? <><span className="text-xs text-[var(--muted)] md:hidden">Received</span><Button variant="ghost" className="px-2 text-xs" onClick={() => setCorrecting({ id: x.id, number: x.purchaseNumber })}>Correct / Reverse</Button></> : <span className="py-2 text-xs font-medium text-[var(--danger)]">Reversed</span>}
+                  {x.status === "RECEIVED" ? <><span className="text-xs text-[var(--muted)] md:hidden">Received</span><Permit permission="purchases.reverse"><Button variant="ghost" className="px-2 text-xs" onClick={() => setCorrecting({ id: x.id, number: x.purchaseNumber })}>Correct / Reverse</Button></Permit></> : <span className="py-2 text-xs font-medium text-[var(--danger)]">Reversed</span>}
                 </div>
               </li>
             ))}
@@ -189,6 +191,8 @@ function PurchasesPage() {
     </div>
   );
 }
+const TeamPage = lazy(() => import("./features/team/team-page").then(m => ({ default: m.TeamPage })));
+
 export default function App() {
   return (
     <Routes>
@@ -205,7 +209,7 @@ export default function App() {
                   </div>
                 }
               >
-                <Routes>
+                <AccessBoundary><Routes>
                   <Route
                     path="/"
                     element={<Navigate to="/dashboard" replace />}
@@ -255,12 +259,13 @@ export default function App() {
                   <Route path="/containers" element={<ContainersPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/team" element={<TeamPage />} />
                   <Route path="/activity" element={<ActivityPage />} />
                   <Route
                     path="*"
                     element={<Navigate to="/dashboard" replace />}
                   />
-                </Routes>
+                </Routes></AccessBoundary>
               </Suspense>
             </AppShell>
           </Protected>

@@ -31,7 +31,11 @@ export function FinanceEntryDetail({
     mutationFn: () => voidFinanceEntry(id, reason),
     onSuccess: async () => {
       setConfirm(false);
-      await cache.invalidateQueries({ queryKey: ["finance"] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["finance"] }),
+        cache.invalidateQueries({ queryKey: ["suppliers"] }),
+        cache.invalidateQueries({ queryKey: ["supplier"] }),
+      ]);
     },
   });
   if (q.isPending)

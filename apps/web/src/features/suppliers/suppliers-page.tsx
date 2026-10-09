@@ -1,3 +1,8 @@
+import { hasPermission } from "@afia/contracts";
+import { useAuth } from "@/features/auth/auth-context";
+import { cashDate } from "@/features/finance/finance-entry-detail";
+import { methodNames } from "@/features/finance/financial-summary";
+import { Permit } from "@/features/auth/permit";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SupplierInput, SupplierSummary } from "@afia/contracts";
@@ -203,6 +208,7 @@ function SupplierForm({
 }
 
 export function SuppliersPage() {
+  const canViewPayments = hasPermission(useAuth().user, "finance.view");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const suppliers = useQuery({
@@ -218,10 +224,12 @@ export function SuppliersPage() {
           <h1>Suppliers</h1>
           <p>Contacts, purchase records and shipments in one place.</p>
         </div>
-        <Button onClick={() => setAdding(true)}>
-          <Plus className="size-4" />
-          Add Supplier
-        </Button>
+        <Permit permission="suppliers.manage">
+          <Button onClick={() => setAdding(true)}>
+            <Plus className="size-4" />
+            Add Supplier
+          </Button>
+        </Permit>
       </header>
       <div className="customers-toolbar">
         <label className="customers-search">
@@ -263,12 +271,14 @@ export function SuppliersPage() {
                 ? "Try another supplier name, phone or email."
                 : "Add a supplier to keep their contact and purchase history together."}
             </p>
-            <Button
-              variant="outline"
-              onClick={() => (search ? setSearch("") : setAdding(true))}
-            >
-              {search ? "Clear Search" : "Add Supplier"}
-            </Button>
+            <Permit permission="suppliers.manage">
+              <Button
+                variant="outline"
+                onClick={() => (search ? setSearch("") : setAdding(true))}
+              >
+                {search ? "Clear Search" : "Add Supplier"}
+              </Button>
+            </Permit>
           </div>
         ) : (
           <>
@@ -282,7 +292,7 @@ export function SuppliersPage() {
                     "Supplier",
                     "Contact",
                     "Purchases",
-                    "Total Purchases",
+                    ...(canViewPayments ? ["Paid to Supplier"] : []),
                     "",
                   ].map((label, i) => (
                     <th key={i} scope="col">
@@ -307,9 +317,16 @@ export function SuppliersPage() {
                       {s.email && <p className="customer-contact">{s.email}</p>}
                     </td>
                     <td className="customer-amount">{s.purchaseCount}</td>
-                    <td className="customer-amount">
-                      {formatMoney(s.totalPurchases)}
-                    </td>
+                    {canViewPayments && (
+                      <td className="customer-amount">
+                        {s.totalPaidToSupplier === undefined
+                          ? "—"
+                          : formatMoney(s.totalPaidToSupplier)}
+                        <p className="customer-contact">
+                          {s.supplierPaymentCount ?? 0} payments
+                        </p>
+                      </td>
+                    )}
                     <td>
                       <Button asChild variant="outline" className="text-xs">
                         <Link to={`/suppliers/${s.id}`}>View Supplier</Link>
@@ -335,10 +352,16 @@ export function SuppliersPage() {
                         <dt>Purchases</dt>
                         <dd>{s.purchaseCount}</dd>
                       </div>
-                      <div>
-                        <dt>Total Purchases</dt>
-                        <dd>{formatMoney(s.totalPurchases)}</dd>
-                      </div>
+                      {canViewPayments && (
+                        <div>
+                          <dt>Paid to Supplier</dt>
+                          <dd>
+                            {s.totalPaidToSupplier === undefined
+                              ? "—"
+                              : formatMoney(s.totalPaidToSupplier)}
+                          </dd>
+                        </div>
+                      )}
                     </dl>
                     <Button asChild variant="outline" className="text-xs">
                       <Link to={`/suppliers/${s.id}`}>View Supplier</Link>
@@ -354,7 +377,9 @@ export function SuppliersPage() {
             <span>
               {suppliers.isFetching
                 ? "Updating…"
-                : "Open a supplier for contacts and purchase history."}
+                : canViewPayments
+                  ? "Payments are all-time totals, excluding voided entries."
+                  : "Open a supplier for contacts and purchase history."}
             </span>
             <span>Search to find more · Up to 50 results</span>
           </footer>
@@ -366,6 +391,7 @@ export function SuppliersPage() {
 }
 
 export function SupplierDetailPage() {
+  const canViewPayments = hasPermission(useAuth().user, "finance.view");
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -452,16 +478,20 @@ export function SupplierDetailPage() {
         </div>
         {!data.archivedAt && (
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              <Edit3 className="size-4" /> Edit
-            </Button>
-            <Button
-              variant="outline"
-              className="text-[var(--danger)]"
-              onClick={() => setConfirmArchive(true)}
-            >
-              <Archive className="size-4" /> Archive
-            </Button>
+            <Permit permission="suppliers.manage">
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                <Edit3 className="size-4" /> Edit
+              </Button>
+            </Permit>
+            <Permit permission="suppliers.archive">
+              <Button
+                variant="outline"
+                className="text-[var(--danger)]"
+                onClick={() => setConfirmArchive(true)}
+              >
+                <Archive className="size-4" /> Archive
+              </Button>
+            </Permit>
           </div>
         )}
       </div>
@@ -470,18 +500,29 @@ export function SupplierDetailPage() {
           {data.notes}
         </p>
       )}
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <article className="rounded-md border border-[var(--border)] bg-white p-4">
-          <p className="text-xs text-[var(--muted)]">Total Purchases</p>
-          <p className="mt-2 text-2xl font-semibold">
-            ৳{data.totalPurchases.toLocaleString()}
-          </p>
-        </article>
+      <section
+        className={`mt-6 grid grid-cols-2 gap-3 ${canViewPayments ? "sm:grid-cols-3" : ""}`}
+      >
+        {canViewPayments && (
+          <article className="rounded-md border border-[var(--border)] bg-white p-4">
+            <p className="text-xs text-[var(--muted)]">Paid to Supplier</p>
+            <p className="mt-2 text-2xl font-semibold">
+              {data.totalPaidToSupplier === undefined
+                ? "—"
+                : formatMoney(data.totalPaidToSupplier)}
+            </p>
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              {data.supplierPaymentCount ?? 0} active payments · All time
+            </p>
+          </article>
+        )}
         <article className="rounded-md border border-[var(--border)] bg-white p-4">
           <p className="text-xs text-[var(--muted)]">Purchase Records</p>
           <p className="mt-2 text-2xl font-semibold">{data.purchaseCount}</p>
         </article>
-        <article className="col-span-2 rounded-md border border-[var(--border)] bg-white p-4 sm:col-span-1">
+        <article
+          className={`${canViewPayments ? "col-span-2 sm:col-span-1" : ""} rounded-md border border-[var(--border)] bg-white p-4`}
+        >
           <p className="text-xs text-[var(--muted)]">Containers / Shipments</p>
           <p className="mt-2 text-2xl font-semibold">{data.shipments.length}</p>
         </article>
@@ -546,7 +587,9 @@ export function SupplierDetailPage() {
                 <th className="px-3 py-3 text-right font-medium">
                   Stock received
                 </th>
-                <th className="px-3 py-3 text-right font-medium">Amount</th>
+                <th className="px-3 py-3 text-right font-medium">
+                  Recorded value
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -567,7 +610,11 @@ export function SupplierDetailPage() {
                     {purchase.totalMeters.toLocaleString()}m
                   </td>
                   <td className="px-3 py-3 text-right">
-                    ৳{purchase.totalAmount.toLocaleString()}
+                    {purchase.totalAmount > 0 ? (
+                      formatMoney(purchase.totalAmount)
+                    ) : (
+                      <span className="text-[var(--muted)]">Not recorded</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -580,6 +627,50 @@ export function SupplierDetailPage() {
           )}
         </div>
       </section>
+      {canViewPayments && (
+        <section className="mt-5 rounded-md border border-[var(--border)] bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-semibold">Recent Supplier Payments</h2>
+            <Button asChild variant="outline" className="text-xs">
+              <Link to="/cashbook/supplier-payments">Open Cashbook</Link>
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Latest 5 active payments. Purchase receiving records stock
+            separately; it does not record a payment or supplier payable.
+          </p>
+          <div className="mt-3 space-y-2">
+            {(data.recentSupplierPayments ?? []).map((payment) => (
+              <Link
+                key={payment.id}
+                to={`/cashbook/entries/${encodeURIComponent(payment.id)}`}
+                className="flex min-h-11 items-center justify-between gap-3 rounded-md bg-[var(--surface-subtle)] p-3 text-sm hover:bg-[var(--primary-soft)]"
+              >
+                <div>
+                  <p>
+                    {cashDate(payment.occurredAt)} ·{" "}
+                    {methodNames[payment.method as keyof typeof methodNames] ??
+                      payment.method}
+                  </p>
+                  {payment.reference && (
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      {payment.reference}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 font-semibold">
+                  {formatMoney(payment.amount)}
+                </span>
+              </Link>
+            ))}
+            {!data.recentSupplierPayments?.length && (
+              <p className="py-7 text-center text-sm text-[var(--muted)]">
+                No active supplier payments recorded.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
       <SupplierForm open={editing} onOpenChange={setEditing} supplier={data} />
       <Drawer.Root open={confirmArchive} onOpenChange={setConfirmArchive}>
         <Drawer.Portal>

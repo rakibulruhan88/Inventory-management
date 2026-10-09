@@ -1,3 +1,4 @@
+import { documentActor } from '../activity/document-actor.js';
 import { appendActivity } from '../activity/activity-write.js';
 import { readDueSources } from '../customers/account-balances.js';
 import { isAccountingWriteConflict, lockCustomerAccount } from '../customers/payment-accounting.js';
@@ -141,6 +142,7 @@ export class SalesService {
     );
     const hasSnapshot = Boolean(sale.customerNameSnapshot);
     return {
+      creatorName: await documentActor(this.prisma, 'Sale', sale.id, 'SALE_CREATED'),
       id: sale.id,
       invoiceNumber: sale.invoiceNumber,
       soldAt: sale.soldAt.toISOString(),

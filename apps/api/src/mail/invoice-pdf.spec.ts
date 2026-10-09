@@ -122,9 +122,58 @@ describe('Invoice PDF formatting', () => {
 });
 
 it('prints Meter mode, sold Meter, price basis and amount in the PDF', async () => {
-  const [text] = await read({ ...fixture, lines: [{ ...fixture.lines[0], mode: 'BY_METER', rollsSold: 0, meterSold: 50, unitPricePerRoll: null, unitPricePerMeter: 120, lineTotal: 6000 }] });
+  const [text] = await read({
+    ...fixture,
+    lines: [
+      {
+        ...fixture.lines[0],
+        mode: 'BY_METER',
+        rollsSold: 0,
+        meterSold: 50,
+        unitPricePerRoll: null,
+        unitPricePerMeter: 120,
+        lineTotal: 6000,
+      },
+    ],
+  });
   expect(text).toContain('Sell By: Meter');
   expect(text).toContain('50');
-  expect(text).toContain('৳120 / Meter');
+  expect(text).toContain('50 Meter × ৳120 = ৳6,000');
   expect(text).toContain('৳6,000');
+});
+
+it('matches the displayed cash tender, invoice allocation and returned change', async () => {
+  const [text] = await read({
+    ...fixture,
+    creatorName: 'Ruhan',
+    subtotal: 1000,
+    totalAmount: 1000,
+    receivedAmount: 2000,
+    paidAmount: 1000,
+    changeAmount: 1000,
+    dueAmount: 0,
+    previousOutstandingBeforeSale: 75002,
+    outstandingAfterSale: 75002,
+    payments: [
+      {
+        id: 'cash',
+        receivedAt: fixture.soldAt,
+        amount: 1000,
+        method: 'CASH',
+        reference: null,
+        notes: null,
+        invoiceNumber: fixture.invoiceNumber,
+        saleId: fixture.id,
+      },
+    ],
+  });
+  expect(text).toContain('Received at Sale ৳2,000');
+  expect(text).toContain('Paid at Sale ৳1,000');
+  expect(text).toContain('Change Returned ৳1,000');
+  expect(text).toContain('Total Due After Sale ৳75,002');
+  expect(text).toContain('Payment Method: Cash');
+  expect(text).toContain('Prepared by Ruhan');
+  expect(text).toContain('Customer Due');
+  expect(text).toContain('Current Sale');
+  expect(text).not.toContain('PAYMENT HISTORY');
 });

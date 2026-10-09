@@ -65,7 +65,7 @@ describe('Cashbook PostgreSQL accounting and security', () => {
     await db.user.createMany({
       data: [
         { id: owner, name: 'Owner', role: 'OWNER', passwordHash: 'test' },
-        { id: staff, name: 'Staff', role: 'STAFF', passwordHash: 'test' },
+        { id: staff, name: 'Staff', role: 'STAFF', passwordHash: 'test', permissions: ['finance.view'] },
       ],
     });
     await db.customer.create({ data: { id: customer, name: 'Test Customer' } });

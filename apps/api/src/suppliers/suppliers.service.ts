@@ -17,7 +17,10 @@ const cleanEmail = (value?: string) =>
 export class SuppliersService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async search(search = ''): Promise<SupplierSummary[]> {
+  async search(
+    search = '',
+    includePayments = false,
+  ): Promise<SupplierSummary[]> {
     const term = normalizeText(search);
     const phoneTerm = normalizePhone(term);
     const rows = await this.prisma.supplier.findMany({
@@ -47,7 +50,16 @@ export class SuppliersService {
       take: 50,
     });
 
+    const payments = includePayments
+      ? await this.paymentSummaries(rows.map((row) => row.id))
+      : null;
     return rows.map((row) => ({
+      ...(payments
+        ? (payments.get(row.id) ?? {
+            totalPaidToSupplier: 0,
+            supplierPaymentCount: 0,
+          })
+        : {}),
       id: row.id,
       name: row.name,
       phone: row.phone,
@@ -64,7 +76,7 @@ export class SuppliersService {
     }));
   }
 
-  async details(id: string): Promise<SupplierDetails> {
+  async details(id: string, includePayments = false): Promise<SupplierDetails> {
     const row = await this.prisma.supplier.findUnique({
       where: { id },
       include: {
@@ -98,7 +110,37 @@ export class SuppliersService {
       }),
     );
 
+    const payments = includePayments ? await this.paymentSummaries([id]) : null;
+    const recentPayments = includePayments
+      ? await this.prisma.financialEntry.findMany({
+          where: { supplierId: id, type: 'SUPPLIER_PAYMENT', voidedAt: null },
+          orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+          take: 5,
+          select: {
+            id: true,
+            occurredAt: true,
+            amount: true,
+            method: true,
+            reference: true,
+          },
+        })
+      : null;
     return {
+      ...(payments
+        ? (payments.get(id) ?? {
+            totalPaidToSupplier: 0,
+            supplierPaymentCount: 0,
+          })
+        : {}),
+      ...(recentPayments
+        ? {
+            recentSupplierPayments: recentPayments.map((entry) => ({
+              ...entry,
+              occurredAt: entry.occurredAt.toISOString(),
+              amount: Number(entry.amount),
+            })),
+          }
+        : {}),
       id: row.id,
       name: row.name,
       phone: row.phone,
@@ -128,22 +170,44 @@ export class SuppliersService {
     };
   }
 
-  async create(input: SupplierInput, actorId?: string): Promise<SupplierSummary> {
-    const supplier = await auditMutation(this.prisma, { action: 'RECORD_CREATED', entityType: 'Supplier', actorId }, async (tx) => tx.supplier.create({
-      data: this.normalizedInput(input),
-    }));
+  async create(
+    input: SupplierInput,
+    actorId?: string,
+  ): Promise<SupplierSummary> {
+    const supplier = await auditMutation(
+      this.prisma,
+      { action: 'RECORD_CREATED', entityType: 'Supplier', actorId },
+      async (tx) =>
+        tx.supplier.create({
+          data: this.normalizedInput(input),
+        }),
+    );
     return this.summary(supplier.id);
   }
 
-  async update(id: string, input: SupplierInput, actorId?: string): Promise<SupplierSummary> {
+  async update(
+    id: string,
+    input: SupplierInput,
+    actorId?: string,
+  ): Promise<SupplierSummary> {
     const existing = await this.prisma.supplier.findFirst({
       where: { id, archivedAt: null },
     });
     if (!existing) throw new NotFoundException('Supplier not found.');
-    await auditMutation(this.prisma, { action: 'RECORD_UPDATED', entityType: 'Supplier', entityId: id, actorId }, async (tx) => tx.supplier.update({
-      where: { id },
-      data: this.normalizedInput(input),
-    }));
+    await auditMutation(
+      this.prisma,
+      {
+        action: 'RECORD_UPDATED',
+        entityType: 'Supplier',
+        entityId: id,
+        actorId,
+      },
+      async (tx) =>
+        tx.supplier.update({
+          where: { id },
+          data: this.normalizedInput(input),
+        }),
+    );
     return this.summary(id);
   }
 
@@ -152,11 +216,48 @@ export class SuppliersService {
       where: { id, archivedAt: null },
     });
     if (!supplier) throw new NotFoundException('Supplier not found.');
-    await auditMutation(this.prisma, { action: 'RECORD_ARCHIVED', entityType: 'Supplier', entityId: id, actorId }, async (tx) => tx.supplier.update({
-      where: { id },
-      data: { archivedAt: new Date() },
-    }));
+    await auditMutation(
+      this.prisma,
+      {
+        action: 'RECORD_ARCHIVED',
+        entityType: 'Supplier',
+        entityId: id,
+        actorId,
+      },
+      async (tx) =>
+        tx.supplier.update({
+          where: { id },
+          data: { archivedAt: new Date() },
+        }),
+    );
     return { id, archived: true };
+  }
+
+  private async paymentSummaries(ids: string[]) {
+    if (!ids.length)
+      return new Map<
+        string,
+        { totalPaidToSupplier: number; supplierPaymentCount: number }
+      >();
+    const rows = await this.prisma.financialEntry.groupBy({
+      by: ['supplierId'],
+      where: {
+        supplierId: { in: ids },
+        type: 'SUPPLIER_PAYMENT',
+        voidedAt: null,
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+    return new Map(
+      rows.map((row) => [
+        row.supplierId!,
+        {
+          totalPaidToSupplier: Number(row._sum.amount ?? 0),
+          supplierPaymentCount: row._count._all,
+        },
+      ]),
+    );
   }
 
   private normalizedInput(input: SupplierInput) {

@@ -1,3 +1,6 @@
+import { hasPermission } from "@afia/contracts";
+import { useAuth } from "@/features/auth/auth-context";
+import { Permit } from "@/features/auth/permit";
 import { MAX_SALE_AMOUNT } from "@afia/contracts";
 import {
   addColorRow,
@@ -53,6 +56,7 @@ const blankItem = (): FormData["items"][number] => ({
 });
 
 export function NewSalePage() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [notesOpen, setNotesOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -90,7 +94,7 @@ export function NewSalePage() {
       discountAmount: 0,
       receivedAmount: 0,
       paymentMethod: "CASH",
-      emailInvoice: true,
+      emailInvoice: hasPermission(user, "sales.email"),
       notes: "",
       items: [blankItem()],
     },
@@ -431,7 +435,7 @@ export function NewSalePage() {
               )}
             </div>
             {values.customer?.email && (
-              <label className="sale-email flex min-h-10 min-w-0 items-center gap-2 text-xs">
+              <Permit permission="sales.email"><label className="sale-email flex min-h-10 min-w-0 items-center gap-2 text-xs">
                 <input
                   className="size-4 accent-[var(--accent)]"
                   type="checkbox"
@@ -441,7 +445,7 @@ export function NewSalePage() {
                   Email invoice{" "}
                   <span className="sr-only">to {values.customer.email}</span>
                 </span>
-              </label>
+              </label></Permit>
             )}
           </section>
 

@@ -1,3 +1,4 @@
+import { permissionGroups } from '@afia/contracts';
 import { createHash } from 'node:crypto';
 import { Prisma } from '../generated/prisma/client.js';
 import type { AuditAction } from '../generated/prisma/client.js';
@@ -25,7 +26,7 @@ const fields = {
     'logoUrl',
     'faviconUrl',
   ],
-  User: ['name', 'username', 'email', 'role', 'isActive'],
+  User: ['name', 'username', 'email', 'role', 'isActive', 'permissions', 'deletedAt'],
   InvoiceImportDraft: ['originalFileName', 'status', 'confirmedPurchaseId'],
 } as const;
 export type ActivityEntity = keyof typeof fields;
@@ -38,6 +39,10 @@ export function safeSnapshot(
   for (const key of fields[entityType]) {
     const v = value[key];
     if (v === undefined) continue;
+    if (key === 'permissions' && Array.isArray(v)) {
+      result[key] = permissionGroups.map(group => group.permissions.filter(permission => v.includes(permission.key)).map(permission => permission.label).join(', ')).filter(Boolean).join(', ') || 'No business access';
+      continue;
+    }
     if (key === 'logoUrl' || key === 'faviconUrl') {
       result[key] = v
         ? 'image:' + createHash('sha256').update(String(v)).digest('hex')

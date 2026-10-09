@@ -1,3 +1,5 @@
+import { StaffController } from './staff.controller.js';
+import { StaffService } from './staff.service.js';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -11,8 +13,8 @@ import { sessionJwtOptions } from './session-options.js';
       useFactory: sessionJwtOptions,
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService],
+  controllers: [AuthController, StaffController],
+  providers: [AuthService, StaffService],
   exports: [JwtModule],
 })
 export class AuthModule {}

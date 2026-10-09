@@ -56,6 +56,9 @@ export type SupplierSummary = {
   archivedAt: string | null;
   purchaseCount: number;
   totalPurchases: number;
+  /** Active Cashbook supplier payments; omitted without finance-view access. */
+  totalPaidToSupplier?: number;
+  supplierPaymentCount?: number;
 };
 export type SupplierPurchaseHistory = {
   id: string;
@@ -80,6 +83,13 @@ export type SupplierDetails = SupplierSummary & {
   recentPurchases: SupplierPurchaseHistory[];
   purchaseHistory: SupplierPurchaseHistory[];
   shipments: SupplierShipment[];
+  recentSupplierPayments?: {
+    id: string;
+    occurredAt: string;
+    amount: number;
+    method: string;
+    reference: string | null;
+  }[];
 };
 export type CustomerSummary = {
   id: string;
@@ -251,6 +261,7 @@ export type SaleInvoiceLine = {
   lineTotal: number;
 };
 export type SaleInvoice = {
+  creatorName?: string | null;
   id: string;
   invoiceNumber: string;
   soldAt: string;
@@ -300,6 +311,8 @@ export type StockAdjustmentRequest = {
 export type VoidSaleRequest = { reason: string };
 export type ReversePurchaseRequest = { reason: string };
 export type AuthUser = {
+  permissions?: import("./access.js").Permission[];
+  sessionVersion?: number;
   id: string;
   name: string;
   username: string | null;
@@ -506,6 +519,7 @@ export type PaymentReceiptAllocation = {
   amount: number; previousDue: number; remainingDue: number;
 };
 export type PaymentReceipt = {
+  creatorName?: string | null;
   id: string; receiptNumber: string; customerId: string;
   customerName: string; customerPhone: string | null;
   totalAmount: number; method: string; reference: string | null; notes: string | null;
@@ -544,3 +558,7 @@ export type PaymentListQuery = { search?: string; page?: number; pageSize?: numb
 export * from './finance.js';
 
 export * from './activity.js';
+
+export * from "./access.js";
+
+export * from "./invoice-document.js";

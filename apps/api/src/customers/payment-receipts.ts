@@ -1,3 +1,4 @@
+import { documentActor } from '../activity/document-actor.js';
 import { appendActivity } from '../activity/activity-write.js';
 import { readDueSources, presentDueSource } from './account-balances.js';
 import { createHash } from 'node:crypto';
@@ -70,7 +71,7 @@ export async function receiptDetails(
     include: receiptInclude,
   });
   if (!receipt) throw new NotFoundException('Payment receipt not found.');
-  return presentReceipt(receipt);
+  return { ...presentReceipt(receipt), creatorName: await documentActor(tx, 'CustomerPaymentReceipt', receipt.id, 'CUSTOMER_PAYMENT_RECEIVED') };
 }
 export async function paymentContext(
   prisma: PrismaService,

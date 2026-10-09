@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { useState } from "react";
 import { SearchablePicker } from "@/components/searchable-picker";
 import { InlinePartyFields, type InlinePartyValues, type PartySuggestion } from "@/components/inline-party-fields";
@@ -51,6 +52,6 @@ export function SaleCustomerEntry(props: Props) {
         onChange={id => { const party = props.suggestions.find(p => p.id === id); if (party) props.onSelect(party); }} />
       {props.nameError && <p role="alert" className="text-xs text-[var(--danger)]">{props.nameError}</p>}
     </div>
-    <Button type="button" variant="ghost" className="sale-new-customer" onClick={() => setEditing(true)}>New customer</Button>
+    <Permit permission="customers.manage"><Button type="button" variant="ghost" className="sale-new-customer" onClick={() => setEditing(true)}>New customer</Button></Permit>
   </div>;
 }

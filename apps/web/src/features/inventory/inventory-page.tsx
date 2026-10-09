@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   InventoryColorVariant,
@@ -173,9 +174,9 @@ export function InventoryPage() {
             Stock by item. Expand for colors and container balances.
           </p>
         </div>
-        <Button asChild variant="outline">
+        <Permit permission="purchases.receive"><Button asChild variant="outline">
           <Link to="/purchases/new">Receive Purchase</Link>
-        </Button>
+        </Button></Permit>
       </div>
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-full md:max-w-xl">
@@ -284,12 +285,12 @@ export function InventoryPage() {
                               </p>
                             </div>
                             <div className="-ml-2 flex flex-wrap gap-1 md:ml-0">
-                              <Button type="button" variant="ghost" className="px-2 text-xs md:px-3 md:text-sm" onClick={() => beginEditItem(item)}>
+                              <Permit permission="inventory.manage"><Button type="button" variant="ghost" className="px-2 text-xs md:px-3 md:text-sm" onClick={() => beginEditItem(item)}>
                                 <Edit3 aria-hidden="true" className="size-3.5" /> Edit item
-                              </Button>
-                              <Button type="button" variant="ghost" className="px-2 text-xs text-[var(--danger)] md:px-3 md:text-sm" onClick={() => setDeleteTarget({ kind: "item", id: item.productId, label: item.itemCode })}>
+                              </Button></Permit>
+                              <Permit permission="inventory.archive"><Button type="button" variant="ghost" className="px-2 text-xs text-[var(--danger)] md:px-3 md:text-sm" onClick={() => setDeleteTarget({ kind: "item", id: item.productId, label: item.itemCode })}>
                                 <Trash2 aria-hidden="true" className="size-3.5" /> Delete item
-                              </Button>
+                              </Button></Permit>
                             </div>
                           </div>
                           {item.variants.map((variant) => (
@@ -317,7 +318,7 @@ export function InventoryPage() {
               {search ? "Try another item code, color, roll, meter or container." : "Receive the first container to see inventory here."}
             </p>
             {search ? <Button className="mt-4" variant="outline" onClick={() => setSearch("")}>Clear search</Button> :
-              <Button asChild className="mt-4" variant="outline"><Link to="/purchases/new">Receive Purchase</Link></Button>}
+              <Permit permission="purchases.receive"><Button asChild className="mt-4" variant="outline"><Link to="/purchases/new">Receive Purchase</Link></Button></Permit>}
           </div>
         )}
       </section>
@@ -539,9 +540,9 @@ function InventoryColorDetails({
           </div>
         </div>
         <div className="-ml-2 flex shrink-0 self-start gap-0 md:ml-0 md:self-auto md:gap-1">
-          <Button type="button" variant="ghost" className="px-2 text-xs md:px-3 md:text-sm" onClick={onAdjust}><Scale aria-hidden="true" className="size-3.5 md:size-4" /> Adjust</Button>
-          <Button type="button" size="icon" variant="ghost" aria-label={`Edit ${variant.color}`} onClick={onEdit}><Edit3 aria-hidden="true" className="size-3.5 md:size-4" /></Button>
-          <Button type="button" size="icon" variant="ghost" className="text-[var(--danger)]" aria-label={`Delete ${variant.color}`} onClick={onDelete}><Trash2 aria-hidden="true" className="size-3.5 md:size-4" /></Button>
+          <Permit permission="inventory.adjust"><Button type="button" variant="ghost" className="px-2 text-xs md:px-3 md:text-sm" onClick={onAdjust}><Scale aria-hidden="true" className="size-3.5 md:size-4" /> Adjust</Button></Permit>
+          <Permit permission="inventory.manage"><Button type="button" size="icon" variant="ghost" aria-label={`Edit ${variant.color}`} onClick={onEdit}><Edit3 aria-hidden="true" className="size-3.5 md:size-4" /></Button></Permit>
+          <Permit permission="inventory.archive"><Button type="button" size="icon" variant="ghost" className="text-[var(--danger)]" aria-label={`Delete ${variant.color}`} onClick={onDelete}><Trash2 aria-hidden="true" className="size-3.5 md:size-4" /></Button></Permit>
         </div>
       </div>
       {variant.batches.length ? (

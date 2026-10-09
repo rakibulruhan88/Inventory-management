@@ -1,3 +1,4 @@
+import { canOpenPage, firstAccessiblePage } from "@afia/contracts";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
@@ -34,8 +35,10 @@ export function LoginPage() {
   const mutation = useMutation({
     mutationFn: login,
     onSuccess: (data) => {
+      queryClient.clear();
       queryClient.setQueryData(["auth"], data);
-      navigate((location.state as { from?: string } | null)?.from || "/dashboard", { replace: true });
+      const from = (location.state as { from?: string } | null)?.from;
+      navigate(from && canOpenPage(data.user, from) ? from : firstAccessiblePage(data.user), { replace: true });
     },
   });
   const busy = auth.loading || mutation.isPending || mutation.isSuccess;
@@ -49,7 +52,7 @@ export function LoginPage() {
     mutation.mutate({ identifier, password });
   };
   const checkCapsLock = (event: KeyboardEvent<HTMLInputElement>) => setCapsLock(event.getModifierState("CapsLock"));
-  if (auth.user) return <Navigate to="/dashboard" replace />;
+  if (auth.user) return <Navigate to={firstAccessiblePage(auth.user)} replace />;
 
   return <main className="login-page">
     <header className="login-page-header"><div className="login-wordmark"><span className="login-monogram" aria-hidden="true">A<span>·</span></span><div><strong>Afia Leather</strong><span>Store workspace</span></div></div><p>Bangladesh <span aria-hidden="true">/</span> ৳ BDT</p></header>

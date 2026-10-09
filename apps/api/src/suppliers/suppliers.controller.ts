@@ -1,4 +1,4 @@
-import type { AuthUser } from '@afia/contracts';
+import { hasPermission, type AuthUser } from '@afia/contracts';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import {
   Body,
@@ -23,17 +23,26 @@ export class SuppliersController {
   ) {}
 
   @Get()
-  search(@Query('search') search?: string): Promise<SupplierSummary[]> {
-    return this.suppliers.search(search);
+  search(
+    @CurrentUser() user: AuthUser,
+    @Query('search') search?: string,
+  ): Promise<SupplierSummary[]> {
+    return this.suppliers.search(search, hasPermission(user, 'finance.view'));
   }
 
   @Get(':id')
-  details(@Param('id') id: string): Promise<SupplierDetails> {
-    return this.suppliers.details(id);
+  details(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<SupplierDetails> {
+    return this.suppliers.details(id, hasPermission(user, 'finance.view'));
   }
 
   @Post()
-  create(@Body() input: CreateSupplierDto, @CurrentUser() user: AuthUser): Promise<SupplierSummary> {
+  create(
+    @Body() input: CreateSupplierDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<SupplierSummary> {
     return this.suppliers.create(input, user.id);
   }
 

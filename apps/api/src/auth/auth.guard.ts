@@ -1,3 +1,6 @@
+import { PrismaService } from '../prisma/prisma.service.js';
+import { canAccessEndpoint } from './access-policy.js';
+import { ForbiddenException } from '@nestjs/common';
 import {
   CanActivate,
   ExecutionContext,
@@ -17,6 +20,7 @@ export class AuthGuard implements CanActivate {
   constructor(
     @Inject(Reflector) private reflector: Reflector,
     @Inject(JwtService) private jwt: JwtService,
+    @Inject(PrismaService) private prisma: PrismaService,
   ) {}
   async canActivate(context: ExecutionContext) {
     if (
@@ -40,7 +44,14 @@ export class AuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('Please sign in.');
     try {
       const verified = await this.jwt.verifyAsync<AuthUser & { exp?: number }>(token);
-      request.user = verified;
+      if (context.getClass().name === 'StaffController' && context.switchToHttp().getRequest<{ method: string }>().method !== 'GET' && !bearer && request.headers['x-afia-staff'] !== '1')
+        throw new ForbiddenException('Please use the signed-in staff form.');
+      const current = await this.prisma.user.findUnique({ where: { id: verified.id } });
+      if (!current?.isActive || current.deletedAt || (verified.sessionVersion ?? 0) !== current.sessionVersion)
+        throw new UnauthorizedException('Please sign in with an active account.');
+      request.user = { id: current.id, name: current.name, username: current.username, email: current.email, role: current.role, permissions: current.permissions as AuthUser['permissions'], sessionVersion: current.sessionVersion };
+      if (!canAccessEndpoint(request.user, context.getClass().name, context.getHandler().name))
+        throw new ForbiddenException('Your account does not have access to this action.');
       if (cookie && !bearer) {
         // Upgrade a still-valid old seven-day login without asking the user to log in again.
         const persistentToken = verified.exp === undefined ? token : await this.jwt.signAsync({
@@ -48,14 +59,16 @@ export class AuthGuard implements CanActivate {
           name: verified.name,
           username: verified.username,
           email: verified.email,
-          role: verified.role,
+          role: current.role,
+          sessionVersion: current.sessionVersion,
         } satisfies AuthUser);
         context.switchToHttp().getResponse<Response>().cookie(
           SESSION_COOKIE, persistentToken, sessionCookieOptions(),
         );
       }
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException(
         'Your session has expired. Please sign in again.',
       );

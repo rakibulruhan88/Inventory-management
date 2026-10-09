@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
@@ -80,7 +81,7 @@ export function PaymentsPage({ cashbook = false }: { cashbook?: boolean }) {
             )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant={cashbook ? "primary" : "outline"}>
+          <Permit permission="payments.opening"><Button asChild variant={cashbook ? "primary" : "outline"}>
             <Link
               to={
                 cashbook
@@ -91,15 +92,15 @@ export function PaymentsPage({ cashbook = false }: { cashbook?: boolean }) {
               <Plus aria-hidden="true" className="size-4" />
               Add Old Customer
             </Link>
-          </Button>
+          </Button></Permit>
           {!cashbook && (
-            <Button
+            <Permit permission="payments.receive"><Button
               onClick={() => setCustomerSearchOpen(true)}
               className="shrink-0"
             >
               <Plus aria-hidden="true" className="size-4" />
               Receive Payment
-            </Button>
+            </Button></Permit>
           )}
         </div>
       </header>

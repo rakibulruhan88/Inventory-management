@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import type { AuthUser } from '@afia/contracts';
+import { hasPermission, type AuthUser } from '@afia/contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
 @Injectable()
 export class FinanceAccessGuard implements CanActivate {
@@ -22,15 +22,15 @@ export class FinanceAccessGuard implements CanActivate {
       r.user &&
       (await this.prisma.user.findFirst({
         where: { id: r.user.id, isActive: true },
-        select: { id: true, role: true },
+        select: { id: true, role: true, permissions: true },
       }));
     if (!user)
       throw new UnauthorizedException('Please sign in with an active account.');
     if (r.method !== 'GET') {
       // Financial posting is owner-only until explicit granular permissions exist.
-      if (user.role !== 'OWNER')
+      if (!hasPermission(user, r.path.endsWith('/void') ? 'finance.void' : 'finance.create'))
         throw new ForbiddenException(
-          'Only the owner can save or void entries.',
+          'Your account cannot save or void this entry.',
         );
       if (r.headers['x-afia-finance'] !== '1')
         throw new ForbiddenException('Please reopen the form and try again.');

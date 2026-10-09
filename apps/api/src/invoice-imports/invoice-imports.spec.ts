@@ -174,7 +174,7 @@ function memoryPrisma() {
       findUnique: vi.fn(async () => null as { id: string } | null),
     },
     user: {
-      findUnique: vi.fn(async () => ({ name: 'Owner', role: 'OWNER' })),
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id, name: 'Owner', role: 'OWNER', username: null, email: null, isActive: true, deletedAt: null, sessionVersion: 0, permissions: [] })),
       findFirst: vi.fn(async () => ({ id: 'owner' }) as { id: string } | null),
     },
     purchase: writes,

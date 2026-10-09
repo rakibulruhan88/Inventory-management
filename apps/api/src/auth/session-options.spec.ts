@@ -16,7 +16,7 @@ function requestContext(headers: Record<string, string>, response = { cookie: vi
   };
   return { context, request, response };
 }
-const guard = () => new AuthGuard({ getAllAndOverride: () => false } as never, jwt);
+const guard = () => new AuthGuard({ getAllAndOverride: () => false } as never, jwt, { user: { findUnique: vi.fn().mockResolvedValue({ ...user, isActive: true, deletedAt: null, sessionVersion: 0, permissions: [] }) } } as never);
 afterEach(() => vi.unstubAllEnvs());
 
 describe('persistent device login', () => {

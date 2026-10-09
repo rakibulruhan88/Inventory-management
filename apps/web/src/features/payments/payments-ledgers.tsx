@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,7 +75,7 @@ export function OutstandingCustomerLedger({
                 {c.lastSoldAt ? formatLedgerDate(c.lastSoldAt) : "—"}
               </td>
               <td className={cell}>
-                <Button
+                <Permit permission="payments.receive"><Button
                   asChild
                   variant="outline"
                   className="whitespace-nowrap px-3 text-xs"
@@ -85,7 +86,7 @@ export function OutstandingCustomerLedger({
                   >
                     Receive Payment
                   </Link>
-                </Button>
+                </Button></Permit>
               </td>
             </tr>
           ))}
@@ -124,14 +125,14 @@ export function OutstandingCustomerLedger({
                 </dd>
               </div>
             </dl>
-            <Button asChild variant="outline" className="mt-3 w-full sm:w-auto">
+            <Permit permission="payments.receive"><Button asChild variant="outline" className="mt-3 w-full sm:w-auto">
               <Link
                 aria-label={`Receive payment from ${c.name}`}
                 to={receivePaymentPath(c.id)}
               >
                 Receive Payment
               </Link>
-            </Button>
+            </Button></Permit>
           </li>
         ))}
       </ul>

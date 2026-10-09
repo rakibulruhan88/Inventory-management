@@ -1,3 +1,5 @@
+import { ForbiddenException } from '@nestjs/common';
+import { hasPermission } from '@afia/contracts';
 import { SalesLedgerQueryDto } from './ledger-query.dto.js';
 import {
   Body,
@@ -54,6 +56,8 @@ export class SalesController {
     expectedType: CreateSaleDto, transform: true, whitelist: true,
     forbidNonWhitelisted: true,
   })) input: CreateSaleDto, @CurrentUser() user: AuthUser) {
+    if (input.emailInvoice && !hasPermission(user, 'sales.email')) throw new ForbiddenException('Your account cannot email invoices.');
+    if (!input.customerId && !input.customer?.id && !hasPermission(user, 'customers.manage')) throw new ForbiddenException('Choose an existing customer or ask your admin for customer creation access.');
     return this.sales.create(input, user.id);
   }
   @Post(':id/email') email(@Param('id') id: string, @CurrentUser() user: AuthUser) {

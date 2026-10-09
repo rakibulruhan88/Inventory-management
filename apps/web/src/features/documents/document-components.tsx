@@ -9,12 +9,14 @@ export function DocumentHeader({
   number,
   date,
   numberLabel,
+  creatorName,
 }: {
   settings?: StoreSettingsContract;
   title: string;
   number: string;
   date: string;
   numberLabel?: string;
+  creatorName?: string | null;
 }) {
   return (
     <header className="document-header">
@@ -53,6 +55,7 @@ export function DocumentHeader({
             <dt>Date</dt>
             <dd>{formatLedgerDate(date)}</dd>
           </div>
+          <div><dt>Prepared by</dt><dd>{creatorName ?? "Not recorded"}</dd></div>
         </dl>
       </div>
     </header>

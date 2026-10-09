@@ -111,3 +111,34 @@
 - Owner can search and filter by category, action, person and complete Bangladesh date ranges. Stable server pagination and full-filter summaries share one read snapshot. Details show saved changes, note/reason, time, actor and a link to the real record where available.
 - Desktop uses a ledger with a details panel; mobile uses stacked events and a details drawer. Auto refresh runs while the page is active and can be turned off. This tracks saved work and account events; it does not record page views or keystrokes.
 - Activity has no edit/delete endpoints. The forward migration only adds AuditAction enum values; it never resets, seeds or rewrites historical data. Existing stock, sale, purchase, customer identity, due and payment calculations remain unchanged.
+
+## Staff roles and access
+
+- Owner is the administrator. Only an active Owner can create, update, deactivate, reset passwords or delete Staff accounts, and view Activity or change store settings. Staff cannot grant access, edit an Owner or delete an Owner.
+- Admin sets the initial name, unique username and password. Passwords are bcrypt hashes and never returned or recorded in Activity. Staff can change their own password through Account settings.
+- Staff access is an explicit permission allowlist, enforced against the current database account on every authenticated API request. Unassigned legacy Staff have only their own Account settings until the Owner grants access. Required viewing permissions accompany enabled actions; presets remain editable.
+- Permission, profile, password and activation changes revoke previous staff sessions. Inactive/deleted accounts cannot sign in. Password changes and sign-out revoke previously issued sessions; reactivation never restores revoked tokens. Existing Owner sessions with no version remain valid at version zero.
+- Delete Staff removes access and the account from the team directory while retaining its relational user identity, username reservation and business history. Never hard-delete or reassign historical financial records.
+- Staff changes record safe before/after name, username, access, status and deletion fields atomically. Admin password resets add a password-change event without storing credentials. Activity remains immutable and Owner-only.
+- Delegated finance creation/void replaces the earlier Owner-only manual-write rule: only Staff explicitly granted the corresponding permission may perform that action. Existing custom-header/origin verification, validation, idempotency and financial calculations remain unchanged.
+- Sale creation does not grant email permission or independent customer-management permission. Creating an inline customer requires customer-management access; invoice email, including at checkout, requires invoice-email access. Receiving/importing purchases includes supplier-management access for existing inline supplier creation.
+- Sale Invoice, Customer Payment Receipt and all manual finance documents show Prepared by from the original posting AuditLog actor-name snapshot, with the original linked actor as historical fallback. Rename/deletion never rewrites saved actor-name snapshots. Missing historical attribution stays Not recorded. Downloaded/emailed sale PDFs include the same attribution.
+- Navigation, landing pages and action controls reflect permissions; direct API requests remain authoritative. Browser/visual testing is performed manually by the owner.
+
+### Staff work summary
+
+- Owner-only Staff details include All time / This month saved-work counts by the original AuditLog user ID. Month boundaries use Asia/Dhaka and the event recording date; backdated business transactions do not rewrite when staff performed work.
+- Show enabled work actions and previously recorded actions after permissions are removed, marked Past access. Counts distinguish Sales created, Customers added, Customer payments received, manual Money In/Out, Purchases received, Suppliers added and Stock adjustments. Staff management remains Owner-only; Customers added does not mean new staff accounts.
+- Count distinct successful posting records, without double-counting retries, checkout receipts, receipt allocations or void/reversal events. Stock adjustment counts represent individual adjustment events. Creation counts retain later voided/reversed records; these are work counts, not revenue or active financial totals. Missing historical actors are excluded.
+- Anonymous/expired session checks resolve to Login without removing the active auth query; network checks have a ten-second timeout. Owners opening the root URL land on Dashboard, and Staff land on their first permitted page.
+
+## Supplier payment visibility
+
+- Supplier directory and details display Paid to Supplier from active Cashbook SUPPLIER_PAYMENT entries, linked strictly by Supplier.id. Totals are all-time, exclude voided entries, and are distinct from stock receiving or supplier payable. Similar supplier names never merge balances.
+- Finance-view access is required for supplier payment totals and recent payment receipts; the supplier API omits these fields for other staff.
+- Purchase history shows zero-valued stock receipts as Not recorded rather than implying a recorded zero-price purchase. Payment creation and voiding refresh supplier summaries.
+
+## Invoice PDF consistency
+
+- Screen, downloaded PDF and emailed invoice attachment share the same summary rows and creation-time due calculations, including Received at Sale, Paid at Sale, later payments and Change Returned. Received cash is distinct from the amount allocated to the invoice.
+- The downloaded/emailed PDF follows the invoice sheet layout: labelled identity and Prepared by, customer contact lines, matching item columns, Customer Due panel, Current Sale summary, payment method/reference, notes and signatures. Payment history stays outside the invoice sheet. PDF fonts are bundled for stable rendering; long invoices retain repeated headings and page numbers.

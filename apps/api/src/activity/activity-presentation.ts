@@ -78,6 +78,7 @@ export function activityHref(row: ActivityRecord): string | null {
     return '/inventory';
   if (row.entityType === 'Container') return '/containers';
   if (row.entityType === 'StoreSettings') return '/settings';
+  if (row.entityType === 'User') return '/team';
   return null;
 }
 export function presentActivity(row: ActivityRecord): ActivityRow {
@@ -142,6 +143,8 @@ const detailLabels: Record<string, string> = {
   username: 'Username',
   role: 'Role',
   isActive: 'Active',
+  permissions: 'Staff access',
+  deletedAt: 'Deleted at',
   originalFileName: 'File name',
   status: 'Status',
   confirmedPurchaseId: 'Purchase ID',

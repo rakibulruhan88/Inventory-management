@@ -268,8 +268,13 @@ export function login(input: LoginRequest) {
 export function logout() {
   return apiRequest<{ signedOut: true }>("/auth/logout", { method: "POST" });
 }
-export function getMe() {
-  return apiRequest<{ user: AuthUser }>("/auth/me");
+export async function getMe(): Promise<{ user: AuthUser | null }> {
+  try {
+    return await apiRequest<{ user: AuthUser }>("/auth/me", { signal: AbortSignal.timeout(10000) });
+  } catch (error) {
+    if (error instanceof ApiResponseError && error.status === 401) return { user: null };
+    throw error;
+  }
 }
 export function getAccount() {
   return apiRequest<AccountDetails>("/auth/account");
@@ -443,4 +448,13 @@ export function getActivityDetail(id: string) {
 }
 export function getActivityOptions() {
   return apiRequest<import('@afia/contracts').ActivityOptions>('/activity/options');
+}
+
+export function getStaff() { return apiRequest<import('@afia/contracts').StaffAccount[]>('/staff'); }
+export function saveStaff(id: string | undefined, input: import('@afia/contracts').StaffInput) {
+  return apiRequest<import('@afia/contracts').StaffAccount>(id ? `/staff/${encodeURIComponent(id)}` : '/staff', { method: id ? 'PATCH' : 'POST', headers: { 'x-afia-staff': '1' }, body: JSON.stringify(input) });
+}
+export function deleteStaff(id: string) { return apiRequest<{ deleted: boolean }>(`/staff/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'x-afia-staff': '1' } }); }
+export function getStaffWorkSummary(id: string, period: 'all' | 'month') {
+  return apiRequest<import('@afia/contracts').StaffWorkSummary>(`/staff/${encodeURIComponent(id)}/summary?${new URLSearchParams({ period })}`);
 }

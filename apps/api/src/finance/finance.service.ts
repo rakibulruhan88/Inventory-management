@@ -1,3 +1,4 @@
+import { documentActor } from '../activity/document-actor.js';
 import { appendActivity } from '../activity/activity-write.js';
 import { createHash } from 'node:crypto';
 import {
@@ -120,7 +121,7 @@ export class FinanceService {
       include,
     });
     if (!e) throw new NotFoundException('Entry not found.');
-    return present(e);
+    return { ...present(e), creatorName: await documentActor(this.prisma, 'FinancialEntry', e.id, 'FINANCIAL_ENTRY_CREATED') ?? e.actor.name };
   }
   async create(input: CreateFinanceEntry, actorId: string) {
     const data = financeInput(input);
@@ -147,7 +148,7 @@ export class FinanceService {
               throw new ConflictException(
                 'This entry is already saved with different details.',
               );
-            return present(prior);
+            return { ...present(prior), creatorName: await documentActor(tx, 'FinancialEntry', prior.id, 'FINANCIAL_ENTRY_CREATED') ?? prior.actor.name };
           }
           if (data.supplierId) {
             const supplier = await tx.supplier.findFirst({
@@ -204,7 +205,7 @@ export class FinanceService {
                 occurredAt: e.occurredAt.toISOString(),
               },
             });
-          return present(e);
+          return { ...present(e), creatorName: await documentActor(tx, 'FinancialEntry', e.id, 'FINANCIAL_ENTRY_CREATED') ?? e.actor.name };
         },
         { isolationLevel: 'ReadCommitted', maxWait: 10000, timeout: 20000 },
       );
@@ -249,7 +250,7 @@ export class FinanceService {
               occurredAt: e.occurredAt.toISOString(),
             },
           });
-        return present(e);
+        return { ...present(e), creatorName: await documentActor(tx, 'FinancialEntry', e.id, 'FINANCIAL_ENTRY_CREATED') ?? e.actor.name };
       });
     } catch (e) {
       if (e instanceof HttpException) throw e;

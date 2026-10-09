@@ -1,3 +1,4 @@
+import { Permit } from "@/features/auth/permit";
 import {
   formatMoney,
   LedgerError,
@@ -84,19 +85,19 @@ export function CustomersPage() {
         <Link to={`/customers/${c.id}`}>View Account</Link>
       </Button>
       {c.totalDue > 0 && (
-        <Button asChild variant="outline" className="text-xs">
+        <Permit permission="payments.receive"><Button asChild variant="outline" className="text-xs">
           <Link to={`/customers/${c.id}/receive-payment`}>Receive Payment</Link>
-        </Button>
+        </Button></Permit>
       )}
-      <Button
+      <Permit permission="customers.manage"><Button
         size="icon"
         variant="ghost"
         aria-label={`Edit ${c.name}`}
         onClick={() => open(c)}
       >
         <Edit3 className="size-4" />
-      </Button>
-      <Button
+      </Button></Permit>
+      <Permit permission="customers.archive"><Button
         size="icon"
         variant="ghost"
         aria-label={`Archive ${c.name}`}
@@ -104,7 +105,7 @@ export function CustomersPage() {
         onClick={() => setConfirm(c)}
       >
         <Trash2 className="size-4" />
-      </Button>
+      </Button></Permit>
     </div>
   );
   return (
@@ -115,12 +116,12 @@ export function CustomersPage() {
           <h1>Customers</h1>
           <p>Find an account, check its due and receive payments.</p>
         </div>
-        <Button asChild>
+        <Permit permission="customers.manage"><Button asChild>
           <Link to="/customers/new">
             <Plus className="size-4" />
             Add Customer
           </Link>
-        </Button>
+        </Button></Permit>
       </header>
       <div className="customers-toolbar">
         <label className="customers-search">
@@ -187,9 +188,9 @@ export function CustomersPage() {
                 Clear Filters
               </Button>
             ) : (
-              <Button asChild>
+              <Permit permission="customers.manage"><Button asChild>
                 <Link to="/customers/new">Add Customer</Link>
-              </Button>
+              </Button></Permit>
             )}
           </div>
         ) : (
@@ -466,7 +467,7 @@ export function ContainersPage() {
   );
   const actions = (c: ContainerSummary) => (
     <div className="customer-row-actions">
-      <Button
+      <Permit permission="containers.manage"><Button
         variant="outline"
         className="text-xs"
         onClick={() => {
@@ -477,15 +478,15 @@ export function ContainersPage() {
         }}
       >
         Edit
-      </Button>
-      <Button
+      </Button></Permit>
+      <Permit permission="containers.manage"><Button
         size="icon"
         variant="ghost"
         aria-label={`Archive container ${c.containerNumber}`}
         onClick={() => setConfirm(c)}
       >
         <Trash2 className="size-4" />
-      </Button>
+      </Button></Permit>
     </div>
   );
   const documents = (c: ContainerSummary) =>
@@ -514,12 +515,12 @@ export function ContainersPage() {
           <h1>Containers</h1>
           <p>Container records, suppliers and remaining stock.</p>
         </div>
-        <Button asChild>
+        <Permit permission="purchases.receive"><Button asChild>
           <Link to="/purchases/new">
             <Plus className="size-4" />
             Receive Purchase
           </Link>
-        </Button>
+        </Button></Permit>
       </header>
       <div className="customers-toolbar">
         <label className="customers-search">
@@ -586,9 +587,9 @@ export function ContainersPage() {
                 Clear Filters
               </Button>
             ) : (
-              <Button asChild>
+              <Permit permission="purchases.receive"><Button asChild>
                 <Link to="/purchases/new">Receive Purchase</Link>
-              </Button>
+              </Button></Permit>
             )}
           </div>
         ) : (
