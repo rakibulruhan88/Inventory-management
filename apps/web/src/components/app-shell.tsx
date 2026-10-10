@@ -192,10 +192,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Menu aria-hidden="true" className="size-[18px]" /> More
         </button>
       </nav>
-      <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen}>
+      <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen} handleOnly>
         <Drawer.Portal>
           <Drawer.Overlay className="app-chrome fixed inset-0 z-50 bg-black/35" />
-          <Drawer.Content className="app-chrome fixed inset-x-0 bottom-0 z-50 max-h-[90svh] overflow-y-auto rounded-t-lg border-t border-[var(--border)] bg-[var(--surface)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] outline-none">
+          <Drawer.Content style={{ touchAction: "pan-y", overscrollBehaviorY: "contain" }} className="app-chrome fixed inset-x-0 bottom-0 z-50 max-h-[90svh] overflow-y-auto rounded-t-lg border-t border-[var(--border)] bg-[var(--surface)] p-4 pb-[max(16px,env(safe-area-inset-bottom))] outline-none">
             <div className="mx-auto max-w-lg">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <Drawer.Title className="font-display font-semibold">{name}</Drawer.Title>

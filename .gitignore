@@ -14,3 +14,9 @@ apps/api/src/generated/prisma/
 
 # Private invoice import files (default storage roots, never public assets).
 .invoice-import-storage/
+
+# Deployment releases, private backups and generated PDF output.
+dist-release/
+backups/
+/output/pdf/
+/output/test-pdfs/
