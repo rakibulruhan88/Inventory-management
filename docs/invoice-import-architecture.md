@@ -18,11 +18,23 @@ Products are reused by normalized Item Code. New products receive item-level Des
 
 PDF.js reads native positioned text; insufficient pages use bounded local Tesseract OCR. HYBRID combines the two. Relative semantic headers and physical table cells establish row ownership. Structural label normalization never repairs business identifiers or quantities. Uncertain values remain literal/null with source warnings or unassigned rows. OCR preprocessing and rendered pages remain in memory; the uploaded bytes are unchanged.
 
-The existing bounded child reader, packaged English OCR model, page/pixel/text/row limits and timeouts remain. PDF_TEXT/OCR/HYBRID and parserVersion 3 are retained. Actual private invoice files are never committed. The previously verified native supplier document yielded 7 items, 23 colors, 964 Rolls and 35,050 Meter; image uncertainties require explicit correction.
+The bounded child reader, packaged English OCR model, page/pixel/text/row limits and timeouts remain. PDF_TEXT/OCR/HYBRID are retained; the current parserVersion is 4. Actual private invoice files are never committed. Fixtures cover native, scanned and mixed PDFs and ruled PNG/JPEG tables; image uncertainties require explicit correction.
+
+### Reader improvements (2026-10-14)
+
+- Native PDF drawing rules and text share viewport coordinates. Physical merged cells establish item ownership even when an exporter centers the item below its first color. Packed color cells split only when independently positioned Meter/Rolls row counts agree; otherwise the original text requires review.
+- Embedded/wrapped Contract Number headers and totals spanning the Color column are supported. Corrupt native font text falls back to OCR.
+- Scanned PDF pages target 300 DPI within the existing pixel cap. Sharp 0.35.5 applies camera EXIF orientation, white transparency flattening and grayscale contrast normalization. Deskew searches up to seven degrees; invoice structure plus word geometry selects upright quarter-turn orientation before cell reading. Cell crops include a white margin and use adaptive Sauvola thresholding.
+- Up to 32 uncertain numeric words per page receive two additional crop reads with different segmentation/thresholding. Only identified Meter/Rolls columns qualify; identifiers/color codes are never whitelisted or spell-corrected. Conflicting valid readings lower confidence and block the number, including a printed total. Expected totals never vote on OCR values.
+- Reading remains local and uses the packaged English model. No cloud upload, API key, new schema or alternate stock operation is introduced. Poor scans, unsupported layouts and ambiguous identifiers still need manual review.
+
+The supplied PDF now yields 23 color rows with printed and parsed totals of 964 Rolls / 35,050 Meter, and reads its wrapped Contract Number. Its repeated final Color Code remains a review blocker. Browser checks verified PDF and rotated PNG uploads, matching totals, blocked confirmation and issue-to-field focus; no stock was received. The invoice test family has 349 cases, verified after updating the parser-version assertion; API/web typechecks and builds pass. Image coverage includes resizing, compression, blur, skew, sideways/upside-down orientation, EXIF correction and unchanged original bytes.
 
 `parsedData` is the immutable original extraction, returned as `originalExtractedData`. `reviewedData` is separate. Save/reset allowlist fields, preserve original warnings/source totals, recalculate totals and rerun read-only matching. Server-owned IDs, totals, readiness and match metadata cannot be assigned by clients. A conditional status/timestamp/expiry update prevents stale review saves; confirmation's draft row lock serializes concurrent saves and cleanup.
 
-Purchase Date is editable reviewedData. Deterministic extraction recognizes Date, Invoice Date, CI Date and Document Date, compact YYYYMMDD and supported year-first separated dates. Dates must round-trip as real calendar dates. Malformed, conflicting or low-confidence values remain missing for manual entry; confirmation never substitutes today. Existing parserVersion-3 reviews are preserved and must supply date/reference if absent.
+Purchase Date is editable reviewedData. Deterministic extraction recognizes Date, Invoice Date, CI Date and Document Date, compact YYYYMMDD and supported year-first separated dates. Dates must round-trip as real calendar dates. Malformed, conflicting or low-confidence values remain missing for manual entry; confirmation never substitutes today. Older unconfirmed parser reviews must be reread before editing; confirmed extraction history remains preserved.
+
+If printed totals cannot be read, the editor accepts separately recorded verified Rolls/Meter totals and an explicit invoice-check acknowledgement. Saving recalculates every corrected row and requires matching verified totals. Original extracted totals stay immutable; manual verification never clears duplicate colors, invalid quantities, identity/ownership uncertainty or other confirmation blockers.
 
 ## Final confirmation and idempotency
 
@@ -90,7 +102,7 @@ The shared operation emits one existing PURCHASE_RECEIVED AuditLog with actor, P
 | INVOICE_IMPORT_TIMEOUT_MS | 120000 | Integer 1–300000 |
 | INVOICE_IMPORT_TTL_HOURS | 24 | Integer 1–168 |
 
-Supported formats are application/pdf, image/jpeg and image/png. Upload size is checked while bytes arrive. Images/rendered pages have a 16-million-pixel limit, text a 2-million-character limit, and color rows a 5,000 limit. Two uploads and one reader run concurrently per API instance; each user has at most 20 unexpired temporary drafts. Use a Node runtime compatible with the existing PDF.js dependency (Node >=22.13 or >=24), install target-platform optional Canvas binaries with npm ci, and use a private writable storage volume. No dependency upgrade or runtime service was added in confirmation work. Signature validation is not malware scanning or invoice authenticity verification.
+Supported formats are application/pdf, image/jpeg and image/png. Upload size is checked while bytes arrive. Images/rendered pages have a 16-million-pixel limit, text a 2-million-character limit, and color rows a 5,000 limit. Two uploads and one reader run concurrently per API instance; each user has at most 20 unexpired temporary drafts. Use a Node runtime compatible with the existing PDF.js dependency (Node >=22.13 or >=24), install target-platform optional Canvas and Sharp binaries with npm ci, and use a private writable storage volume. The reader adds Sharp; no existing dependency upgrade or external OCR runtime service is required. Signature validation is not malware scanning or invoice authenticity verification.
 
 ## Migrations and verification
 

@@ -75,6 +75,7 @@ export function SaleItemGroup({
     >
       <div className="sale-item-header flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
+          <label htmlFor={`sale-item-${itemIndex}`} className="sale-item-caption">Item code</label>
           <SearchablePicker
             triggerId={`sale-item-${itemIndex}`}
             label={`Search or change item ${itemIndex + 1}${selectedProduct ? `: ${selectedProduct.itemCode}` : ""}`}
@@ -82,27 +83,14 @@ export function SaleItemGroup({
             searchPlaceholder="Search stock…"
             options={availableProductOptions}
             value={item?.productId}
-            triggerClassName={
-              selectedProduct
-                ? "sale-item-picker min-h-11 w-fit max-w-full gap-3 rounded-sm border-transparent bg-transparent px-0 shadow-none focus-visible:ring-[var(--ring)]"
-                : "min-h-10 px-2.5 shadow-none rounded-md focus-visible:ring-[var(--ring)]"
-            }
+            triggerClassName="sale-item-picker min-h-11 px-3 shadow-none rounded-md focus-visible:ring-[var(--ring)]"
             triggerContent={
               selectedProduct ? (
                 <>
-                  <span className="min-w-0 text-left">
-                    <span className="block break-words text-base font-semibold">
-                      <span className="text-xs font-normal text-[var(--muted)]">Item </span>{selectedProduct.itemCode}
-                    </span>
-                    {selectedProduct.description && (
-                      <span className="block break-words text-xs font-normal text-[var(--muted)]">
-                        Description / Size · {selectedProduct.description}
-                      </span>
-                    )}
+                  <span className="min-w-0 flex-1 break-words text-sm font-semibold">
+                    {selectedProduct.itemCode}
                   </span>
-                  <span className="shrink-0 text-xs font-medium text-[var(--accent)]">
-                    Change
-                  </span>
+                  <ChevronsUpDown aria-hidden="true" className="size-4 shrink-0 text-[var(--muted)]" />
                 </>
               ) : undefined
             }
@@ -110,6 +98,12 @@ export function SaleItemGroup({
             popoverClassName="min-w-72 max-w-[calc(100vw-24px)]"
             onChange={(value) => selectProduct(value)}
           />
+          {selectedProduct?.description && (
+            <p className="sale-item-description">
+              <span className="text-[var(--muted)]">Description / Size</span>
+              <span>{selectedProduct.description}</span>
+            </p>
+          )}
           {error?.productId && (
             <p role="alert" className="text-xs text-[var(--danger)]">
               {error.productId.message}
@@ -132,9 +126,9 @@ export function SaleItemGroup({
         <span>Color</span>
         <span>Stock</span>
         <span>Sell By</span>
-        <span>Rolls</span>
-        <span>Meter</span>
-        <span>Unit Price</span>
+        <span className="text-right">Rolls</span>
+        <span className="text-right">Meter</span>
+        <span className="text-right">Unit Price</span>
         <span className="text-right">Amount</span>
         <span />
       </div>
@@ -162,6 +156,7 @@ export function SaleItemGroup({
           return (
             <div key={rowId} className={`sale-color-row ${meterMode ? "sale-meter-mode" : ""}`}>
               <div className="sale-color-identity min-w-0">
+                <label htmlFor={`sale-color-${itemIndex}-${colorIndex}`} className="sale-field-label text-[var(--muted)]">Color</label>
                 <SearchablePicker
                   triggerId={`sale-color-${itemIndex}-${colorIndex}`}
                   label={`Item ${itemIndex + 1}, color row ${colorIndex + 1}${selectedColor ? `: ${selectedColor.color}` : ""}`}
@@ -169,15 +164,12 @@ export function SaleItemGroup({
                     item?.productId ? "Choose color…" : "Choose item first"
                   }
                   searchPlaceholder="Search colors…"
+                  disabled={!item?.productId}
                   options={baseColorOptions}
                   value={color.variantId}
                   purchasePresentation
                   popoverClassName="min-w-72 max-w-[calc(100vw-24px)]"
-                  triggerClassName={
-                    selectedColor
-                      ? "min-h-10 rounded-sm border-transparent bg-transparent px-0 shadow-none focus-visible:ring-[var(--ring)]"
-                      : "min-h-10 px-2 shadow-none rounded-md focus-visible:ring-[var(--ring)]"
-                  }
+                  triggerClassName="sale-color-picker min-h-11 px-3 shadow-none rounded-md focus-visible:ring-[var(--ring)]"
                   triggerContent={
                     selectedColor ? (
                       <>
@@ -208,7 +200,8 @@ export function SaleItemGroup({
                       {remaining.repeated ? "Remaining" : "Available"}{" "}
                     </span>
                     <span className="sale-stock-long">
-                      {remaining.rolls} Rolls · {remaining.meter.toLocaleString("en-US")} Meter
+                      <span><strong>{remaining.rolls}</strong> Rolls</span>
+                      <span><strong>{remaining.meter.toLocaleString("en-US")}</strong> Meter</span>
                     </span>
                   </>
                 )}

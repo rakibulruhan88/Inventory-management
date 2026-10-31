@@ -166,7 +166,7 @@ describe('Staff access, session revocation and attribution in PostgreSQL', () =>
       .send({ ...staffInput(), username: 'csrf.staff' })
       .expect(403);
   });
-  it('grants explicit money-entry access, invalidates old sessions and keeps void restricted', async () => {
+  it('grants explicit money-entry access without logging out and keeps void restricted', async () => {
     await ownerRequest('patch', `/staff/${staffId}`)
       .send({
         ...staffInput(),
@@ -177,8 +177,8 @@ describe('Staff access, session revocation and attribution in PostgreSQL', () =>
     await request(app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${token}`)
-      .expect(401);
-    token = (await auth.login('sales.staff', 'initial-password')).token;
+      .expect(200)
+      .expect(r => expect(r.body.user.permissions).toContain('finance.create'));
     const result = await request(app.getHttpServer())
       .post('/finance/entries')
       .set('Authorization', `Bearer ${token}`)
@@ -198,6 +198,25 @@ describe('Staff access, session revocation and attribution in PostgreSQL', () =>
       .set('x-afia-finance', '1')
       .send({ reason: 'Not allowed' })
       .expect(403);
+  });
+  it('revokes permission immediately while retaining the same bearer and cookie sessions', async () => {
+    const before = await db.user.findUniqueOrThrow({ where: { id: staffId } });
+    await ownerRequest('patch', `/staff/${staffId}`)
+      .send({ ...staffInput(), password: undefined, permissions: ['sales.create'] })
+      .expect(200);
+    const after = await db.user.findUniqueOrThrow({ where: { id: staffId } });
+    expect(after.sessionVersion).toBe(before.sessionVersion);
+    for (const header of [{ Authorization: `Bearer ${token}` }, { Cookie: `afia_session=${token}` }]) {
+      await request(app.getHttpServer()).get('/auth/me').set(header).expect(200)
+        .expect(r => {
+          expect(r.body.user.permissions).toContain('sales.create');
+          expect(r.body.user.permissions).not.toContain('finance.view');
+        });
+      await request(app.getHttpServer()).get('/finance').set(header).expect(403);
+    }
+    // Even a token containing outdated permissions cannot keep removed access.
+    const staleClaims = jwt.sign({ id: staffId, role: 'STAFF', sessionVersion: after.sessionVersion, permissions: ['finance.view', 'finance.create'] });
+    await request(app.getHttpServer()).get('/finance').set('Authorization', `Bearer ${staleClaims}`).expect(403);
   });
   it('resets the password with a safe audit and blocks all prior tokens', async () => {
     await ownerRequest('patch', `/staff/${staffId}`)

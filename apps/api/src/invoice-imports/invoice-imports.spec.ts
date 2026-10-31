@@ -22,6 +22,7 @@ import { supplierLayoutLines } from './fixtures/supplier-layout-invoice.js';
 import { reviewInput } from './invoice-review.js';
 import type { InvoiceImportReviewInput } from '@afia/contracts';
 import { DocumentReadError } from './document-types.js';
+import { INVOICE_PARSER_VERSION } from './commercial-invoice-parser.js';
 import {
   documentFixture,
   imageFixture,
@@ -335,7 +336,7 @@ describe('safe upload storage and review-only import service', () => {
     const reparsed = await service.parse(uploaded.id, 'owner');
     expect(extract).toHaveBeenCalledTimes(2);
     expect(reparsed.requiresReparse).toBe(false);
-    expect(reparsed.review?.parserVersion).toBe(3);
+    expect(reparsed.review?.parserVersion).toBe(INVOICE_PARSER_VERSION);
     await service.parse(uploaded.id, 'owner');
     expect(extract).toHaveBeenCalledTimes(2);
     expect(database.forbiddenWrite).not.toHaveBeenCalled();
@@ -963,6 +964,112 @@ describe('safe upload storage and review-only import service', () => {
     );
     expect(saved.review!.unassignedRows).toEqual(original.unassignedRows);
   });
+  it('accepts explicitly verified missing invoice totals, preserves extraction, and resets verification', async () => {
+    const { id, input } = await editableDraft();
+    const original = database.rows[0].parsedData as NonNullable<
+      Awaited<ReturnType<typeof service.get>>['review']
+    >;
+    original.invoiceTotals = { rolls: null, meter: null };
+    original.warnings.push(
+      ...(['rolls', 'meter'] as const).map((measure) => ({
+        code: 'INVOICE_TOTAL_UNCERTAIN',
+        field: `invoiceTotals.${measure}`,
+        message: 'Could not read source total.',
+      })),
+    );
+    const before = structuredClone(original);
+    expect(
+      (await service.updateReview(id, 'owner', input)).readyForConfirmation,
+    ).toBe(false);
+    input.verifiedInvoiceTotals = { ...original.parsedTotals, confirmed: true };
+    const saved = await service.updateReview(id, 'owner', input);
+    expect(saved.readyForConfirmation).toBe(true);
+    expect(saved.blockingIssues).toEqual([]);
+    expect(saved.review!.totalsMatch).toEqual({ rolls: true, meter: true });
+    expect(saved.review!.invoiceTotals).toEqual({ rolls: null, meter: null });
+    expect(saved.review!.verifiedInvoiceTotals).toEqual(
+      input.verifiedInvoiceTotals,
+    );
+    expect(saved.hasReviewedChanges).toBe(true);
+    expect(saved.originalExtractedData).toEqual(before);
+    expect(database.forbiddenWrite).not.toHaveBeenCalled();
+    const reset = await service.updateReview(id, 'owner', {}, true);
+    expect(reset.review!.verifiedInvoiceTotals).toBeUndefined();
+    expect(reset.readyForConfirmation).toBe(false);
+    expect(reset.originalExtractedData).toEqual(before);
+  });
+  it('still blocks wrong manually verified totals and unresolved source rows', async () => {
+    const { id, input } = await editableDraft();
+    const original = database.rows[0].parsedData as NonNullable<
+      Awaited<ReturnType<typeof service.get>>['review']
+    >;
+    input.verifiedInvoiceTotals = {
+      rolls: original.parsedTotals.rolls + 1,
+      meter: original.parsedTotals.meter + 0.01,
+      confirmed: true,
+    };
+    const mismatch = await service.updateReview(id, 'owner', input);
+    expect(mismatch.readyForConfirmation).toBe(false);
+    expect(mismatch.blockingIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'SOURCE_TOTAL_MISMATCH',
+          field: 'totals.rolls',
+        }),
+        expect.objectContaining({
+          code: 'SOURCE_TOTAL_MISMATCH',
+          field: 'totals.meter',
+        }),
+      ]),
+    );
+    original.unassignedRows.push({
+      itemCode: null,
+      description: null,
+      color: null,
+      rolls: 1,
+      meter: 1,
+      text: 'Unknown row',
+      reason: 'Unknown owner',
+      source: { page: 1, line: 999, method: 'OCR' },
+    });
+    input.verifiedInvoiceTotals = { ...original.parsedTotals, confirmed: true };
+    const unresolved = await service.updateReview(id, 'owner', input);
+    expect(unresolved.readyForConfirmation).toBe(false);
+    expect(unresolved.blockingIssues).toContainEqual(
+      expect.objectContaining({ code: 'ROW_OWNERSHIP' }),
+    );
+  });
+  it.each([
+    ['confirmed', false],
+    ['confirmed', 'true'],
+    ['rolls', null],
+    ['rolls', '154'],
+    ['rolls', 0],
+    ['rolls', 1.5],
+    ['rolls', 2147483648],
+    ['meter', null],
+    ['meter', -1],
+    ['meter', 0.001],
+    ['meter', 10000000000],
+  ])(
+    'rejects invalid manual invoice total %s=%s without saving',
+    async (key, value) => {
+      const { id, input, original } = await editableDraft();
+      const verified = {
+        ...original.parsedTotals,
+        confirmed: true,
+        [key]: value,
+      };
+      await expect(
+        service.updateReview(id, 'owner', {
+          ...input,
+          verifiedInvoiceTotals: verified,
+        }),
+      ).rejects.toThrow('highlighted');
+      expect(database.rows[0].reviewedData).toBeNull();
+      expect(database.forbiddenWrite).not.toHaveBeenCalled();
+    },
+  );
   it('clears invalid OCR Meter uncertainty only after a manual value correction', async () => {
     const { id, input } = await editableDraft();
     const original = database.rows[0].parsedData as NonNullable<

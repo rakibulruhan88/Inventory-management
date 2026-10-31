@@ -7,6 +7,8 @@ import type {
 } from "@afia/contracts";
 import { InvoiceConfirmation } from "./invoice-confirmation";
 import { InvoiceReviewEditor } from "./invoice-review-editor";
+import { InvoiceIssueList } from "./invoice-issue-list";
+import type { ReviewIssueSelection } from "./invoice-review-issues";
 import { Button } from "@/components/ui/button";
 import {
   getInvoiceImport,
@@ -32,6 +34,8 @@ export function InvoiceImportPanel({
   discardVersion: number;
 }) {
   const [editing, setEditing] = useState(false);
+  const [issueSelection, setIssueSelection] =
+    useState<ReviewIssueSelection | null>(null);
   const [dirty, setDirty] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const changeDirty = (value: boolean) => {
@@ -48,8 +52,19 @@ export function InvoiceImportPanel({
     queryFn: getInvoiceImportLimits,
   });
   const input = useRef<HTMLInputElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
   const inFlight = useRef(false);
   const [file, setFile] = useState<File | null>(null);
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) {
+      setSourceUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setSourceUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
   const [draft, setDraft] = useState<InvoiceImportDraftResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<string | null>(null);
@@ -57,6 +72,18 @@ export function InvoiceImportPanel({
     "idle" | "uploading" | "reading" | "refreshing" | "saving" | "confirming"
   >("idle");
   const busy = phase !== "idle";
+  const startEditing = (selection: ReviewIssueSelection | null = null) => {
+    if (
+      busy ||
+      draft?.status !== "REVIEW" ||
+      !draft.originalExtractedData ||
+      draft.requiresReparse
+    )
+      return;
+    setSavedMessage(null);
+    setIssueSelection(selection);
+    setEditing(true);
+  };
   const chooseFile = (selected?: File) => {
     if (inFlight.current) return;
     if (
@@ -281,14 +308,13 @@ export function InvoiceImportPanel({
         )}
         {draft && (
           <div
-            aria-live="polite"
-            className="space-y-3 border-t border-[var(--border)] pt-4"
+            ref={resultRef}
+            tabIndex={-1}
+            className="space-y-3 scroll-mt-28 border-t border-[var(--border)] pt-4 outline-none"
           >
             <div className="flex flex-wrap justify-between gap-2 text-xs text-[var(--muted)]">
               <span className="break-all">
                 {draft.originalFileName} · {statusLabel(draft.status)}
-                {draft.parsingMethod &&
-                  ` · ${draft.parsingMethod.replaceAll("_", " ")}`}
               </span>
               <span>
                 {draft.status === "CONFIRMED"
@@ -296,26 +322,32 @@ export function InvoiceImportPanel({
                   : `Temporary · Expires ${new Date(draft.expiresAt).toLocaleString()}`}
               </span>
             </div>
-            {!editing && (
-              <InvoiceConfirmation
-                disabled={busy}
-                key={draft.id}
-                draft={draft}
-                onBusyChange={(value) => {
-                  inFlight.current = value;
-                  setPhase(value ? "confirming" : "idle");
-                }}
-                onConfirmed={(purchaseId) => {
-                  setSavedMessage(null);
-                  setDraft({
-                    ...draft,
-                    status: "CONFIRMED",
-                    confirmedPurchaseId: purchaseId,
-                    readyForConfirmation: false,
-                  });
-                }}
-              />
-            )}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3 py-1">
+              {sourceUrl && (
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center text-sm font-medium text-[var(--primary)] underline underline-offset-4"
+                >
+                  View uploaded invoice
+                </a>
+              )}
+              {!editing && draft.review && (
+                <Button
+                  type="button"
+                  disabled={
+                    busy ||
+                    draft.status !== "REVIEW" ||
+                    !draft.originalExtractedData ||
+                    draft.requiresReparse
+                  }
+                  onClick={() => startEditing()}
+                >
+                  Edit invoice details
+                </Button>
+              )}
+            </div>
             {draft.requiresReparse && (
               <p role="alert" className="text-sm text-[var(--danger)]">
                 This draft was read by an older parser. Read it again before
@@ -350,7 +382,10 @@ export function InvoiceImportPanel({
             {draft.review &&
               (editing ? (
                 <InvoiceReviewEditor
+                  key={draft.id}
                   draft={draft}
+                  initialSelection={issueSelection}
+                  onChooseFile={() => input.current?.click()}
                   onBusyChange={(value) => {
                     inFlight.current = value;
                     setPhase(value ? "saving" : "idle");
@@ -361,25 +396,51 @@ export function InvoiceImportPanel({
                     setDraft(result);
                     setEditing(false);
                     setSavedMessage(
-                      "Review saved. No stock or master records changed.",
+                      result.blockingIssues.length
+                        ? `Changes saved and checked. ${result.blockingIssues.length} ${result.blockingIssues.length === 1 ? "detail still needs" : "details still need"} checking.`
+                        : "Changes saved and checked. Review the summary below before receiving stock.",
                     );
+                    requestAnimationFrame(() => {
+                      resultRef.current?.scrollIntoView({ block: "start" });
+                      resultRef.current?.focus({ preventScroll: true });
+                    });
                   }}
                 />
               ) : (
                 <>
-                  <InvoiceReview review={draft.review} draft={draft} />
-                  <Button
-                    type="button"
-                    disabled={busy || draft.status !== "REVIEW"}
-                    onClick={() => {
-                      setSavedMessage(null);
-                      setEditing(true);
-                    }}
-                  >
-                    Edit imported data
-                  </Button>
+                  <InvoiceReview
+                    review={draft.review}
+                    draft={draft}
+                    onSelectIssue={startEditing}
+                    editingDisabled={
+                      busy ||
+                      draft.status !== "REVIEW" ||
+                      !draft.originalExtractedData ||
+                      draft.requiresReparse
+                    }
+                  />
                 </>
               ))}
+            {!editing && (
+              <InvoiceConfirmation
+                disabled={busy}
+                key={draft.id}
+                draft={draft}
+                onBusyChange={(value) => {
+                  inFlight.current = value;
+                  setPhase(value ? "confirming" : "idle");
+                }}
+                onConfirmed={(purchaseId) => {
+                  setSavedMessage(null);
+                  setDraft({
+                    ...draft,
+                    status: "CONFIRMED",
+                    confirmedPurchaseId: purchaseId,
+                    readyForConfirmation: false,
+                  });
+                }}
+              />
+            )}
           </div>
         )}
       </div>
@@ -390,9 +451,13 @@ export function InvoiceImportPanel({
 function InvoiceReview({
   review,
   draft,
+  onSelectIssue,
+  editingDisabled,
 }: {
   review: InvoiceImportReview;
   draft: InvoiceImportDraftResponse;
+  onSelectIssue: (selection: ReviewIssueSelection) => void;
+  editingDisabled: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -405,24 +470,15 @@ function InvoiceReview({
             ? "Confirmed review retained with the archived source invoice."
             : draft.readyForConfirmation
               ? "Validation passed. Review the receipt summary before confirming stock."
-              : "Needs review before this data can be used to receive stock."}
+              : "Check the details below against your invoice before receiving stock."}
         </p>
       </div>
-      {draft.blockingIssues.length > 0 && (
-        <div
-          role="alert"
-          className="border-l-2 border-[var(--danger)] pl-3 text-sm"
-        >
-          <h4 className="font-medium">
-            Blocking issues · {draft.blockingIssues.length}
-          </h4>
-          <ul className="mt-2 space-y-1 text-[var(--danger)]">
-            {draft.blockingIssues.map((issue, i) => (
-              <li key={i}>{issue.message}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <InvoiceIssueList
+        issues={draft.blockingIssues}
+        review={review}
+        onSelect={onSelectIssue}
+        disabled={editingDisabled}
+      />
       <dl className="grid gap-4 border-y border-[var(--border)] py-4 sm:grid-cols-2">
         <div className="min-w-0">
           <dt className="text-xs text-[var(--muted)]">Supplier / Exporter</dt>
@@ -573,7 +629,11 @@ function InvoiceReview({
           <thead className="text-xs text-[var(--muted)]">
             <tr>
               <th className="py-2 text-left font-medium">Measure</th>
-              <th className="py-2 text-right font-medium">Invoice</th>
+              <th className="py-2 text-right font-medium">
+                {review.verifiedInvoiceTotals
+                  ? "Manually verified invoice"
+                  : "Invoice"}
+              </th>
               <th className="py-2 text-right font-medium">Original parsed</th>
               <th className="py-2 text-right font-medium">Reviewed</th>
               <th className="py-2 pl-3 text-left font-medium">Validation</th>
@@ -586,7 +646,9 @@ function InvoiceReview({
                   {key === "rolls" ? "Rolls" : "Meter"}
                 </th>
                 <td className="py-2 text-right tabular-nums">
-                  {displayNumber(review.invoiceTotals[key])}
+                  {displayNumber(
+                    (review.verifiedInvoiceTotals ?? review.invoiceTotals)[key],
+                  )}
                 </td>
                 <td className="py-2 text-right tabular-nums">
                   {displayNumber(

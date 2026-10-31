@@ -330,6 +330,102 @@ describe('atomic import receipt and secure original document archive', () => {
       expect(result.document.sha256Hash).toBe(hash(f.bytes));
     },
   );
+  it('receives stock after manual verification of unreadable totals and archives the original extraction', async () => {
+    const f = await fresh({ save: false });
+    const row = await db.client.invoiceImportDraft.findUniqueOrThrow({
+      where: { id: f.id },
+    });
+    const original = structuredClone(row.parsedData) as InvoiceImportReview;
+    original.invoiceTotals = { rolls: null, meter: null };
+    original.warnings.push(
+      ...(['rolls', 'meter'] as const).map((measure) => ({
+        code: 'INVOICE_TOTAL_UNCERTAIN',
+        field: `invoiceTotals.${measure}`,
+        message: 'Unreadable source total.',
+      })),
+    );
+    await db.client.invoiceImportDraft.update({
+      where: { id: f.id },
+      data: { parsedData: original as unknown as Prisma.InputJsonValue },
+    });
+    expect(
+      (await imports.updateReview(f.id, actor, f.input)).readyForConfirmation,
+    ).toBe(false);
+    const verifiedInvoiceTotals = {
+      ...original.parsedTotals,
+      confirmed: true as const,
+    };
+    const saved = await imports.updateReview(f.id, actor, {
+      ...f.input,
+      verifiedInvoiceTotals,
+    });
+    expect(saved.readyForConfirmation).toBe(true);
+    const result = await confirm.confirm(f.id, actor, {});
+    const stored = await db.client.invoiceImportDraft.findUniqueOrThrow({
+      where: { id: f.id },
+    });
+    expect(stored.parsedData).toEqual(original);
+    expect(stored.reviewedData).toMatchObject({
+      verifiedInvoiceTotals,
+      invoiceTotals: { rolls: null, meter: null },
+      totalsMatch: { rolls: true, meter: true },
+    });
+    const purchase = await db.client.purchase.findUniqueOrThrow({
+      where: { id: result.purchase.id },
+      include: { lines: { include: { batch: true } } },
+    });
+    expect(
+      purchase.lines.reduce((sum, line) => sum + line.batch.availableRolls, 0),
+    ).toBe(verifiedInvoiceTotals.rolls);
+    expect(
+      purchase.lines.reduce(
+        (sum, line) => sum + Number(line.batch.availableMeter),
+        0,
+      ),
+    ).toBe(verifiedInvoiceTotals.meter);
+    expect((await documents.content(result.document.id)).bytes).toEqual(
+      f.bytes,
+    );
+    const retry = await confirm.confirm(f.id, actor, {});
+    expect(retry.purchase.id).toBe(result.purchase.id);
+    expect(retry.alreadyConfirmed).toBe(true);
+  });
+  it.each(['mismatch', 'unconfirmed'] as const)(
+    'revalidates manual totals at confirmation despite forged readiness: %s',
+    async (kind) => {
+      const f = await fresh();
+      const row = await db.client.invoiceImportDraft.findUniqueOrThrow({
+        where: { id: f.id },
+      });
+      const review = structuredClone(row.reviewedData) as InvoiceImportReview;
+      review.verifiedInvoiceTotals = {
+        rolls: review.parsedTotals.rolls + (kind === 'mismatch' ? 1 : 0),
+        meter: review.parsedTotals.meter,
+        confirmed: true,
+      };
+      if (kind === 'unconfirmed')
+        (review.verifiedInvoiceTotals as { confirmed: boolean }).confirmed =
+          false;
+      review.totalsMatch = { rolls: true, meter: true };
+      review.validationPassed = true;
+      review.warnings = [];
+      await db.client.invoiceImportDraft.update({
+        where: { id: f.id },
+        data: { reviewedData: review as unknown as Prisma.InputJsonValue },
+      });
+      await expect(confirm.confirm(f.id, actor, {})).rejects.toThrow();
+      expect(
+        await db.client.purchase.count({
+          where: { purchaseNumber: f.input.purchaseNumber! },
+        }),
+      ).toBe(0);
+      expect(
+        await db.client.stockMovement.count({
+          where: { reference: f.input.purchaseNumber! },
+        }),
+      ).toBe(0);
+    },
+  );
   it('serializes simultaneous confirms and a retry even after draft expiry into exactly one stock increase', async () => {
     const f = await fresh();
     const [a, b] = await Promise.all([

@@ -50,7 +50,14 @@ export function validateReviewInput(value: unknown): InvoiceImportReviewInput {
   if (
     object(
       value,
-      ['supplier', 'containerNumber', 'items', 'purchasedAt', 'purchaseNumber'],
+      [
+        'supplier',
+        'containerNumber',
+        'items',
+        'purchasedAt',
+        'purchaseNumber',
+        'verifiedInvoiceTotals',
+      ],
       '',
     )
   ) {
@@ -79,6 +86,42 @@ export function validateReviewInput(value: unknown): InvoiceImportReviewInput {
       error('purchasedAt', 'Enter a valid Purchase Date (YYYY-MM-DD).');
     if (value.purchaseNumber !== undefined && value.purchaseNumber !== null)
       text(value.purchaseNumber, 'purchaseNumber', true);
+    if (
+      value.verifiedInvoiceTotals !== undefined &&
+      object(
+        value.verifiedInvoiceTotals,
+        ['rolls', 'meter', 'confirmed'],
+        'verifiedInvoiceTotals',
+      )
+    ) {
+      const totals = value.verifiedInvoiceTotals;
+      if (totals.confirmed !== true)
+        error(
+          'verifiedInvoiceTotals.confirmed',
+          'Confirm that you checked the totals and every item/color against the invoice.',
+        );
+      if (
+        typeof totals.rolls !== 'number' ||
+        !Number.isSafeInteger(totals.rolls) ||
+        totals.rolls <= 0 ||
+        totals.rolls > 2147483647
+      )
+        error(
+          'verifiedInvoiceTotals.rolls',
+          'Enter a positive whole-number invoice Rolls total.',
+        );
+      if (
+        typeof totals.meter !== 'number' ||
+        !Number.isFinite(totals.meter) ||
+        totals.meter < 0 ||
+        totals.meter > 9999999999.99 ||
+        Math.abs(totals.meter * 100 - Math.round(totals.meter * 100)) > 0.0001
+      )
+        error(
+          'verifiedInvoiceTotals.meter',
+          'Enter an invoice Meter total of zero or greater, with at most two decimals.',
+        );
+    }
     if (
       !Array.isArray(value.items) ||
       !value.items.length ||
@@ -215,6 +258,9 @@ export function reviewInput(
   return {
     purchasedAt: review.purchasedAt ?? null,
     purchaseNumber: review.purchaseNumber ?? null,
+    ...(review.verifiedInvoiceTotals !== undefined
+      ? { verifiedInvoiceTotals: structuredClone(review.verifiedInvoiceTotals) }
+      : {}),
     supplier: {
       name: review.supplier.detectedName ?? '',
       phone: review.supplier.phone,
@@ -240,6 +286,9 @@ export function buildReviewedData(
   input: InvoiceImportReviewInput,
 ): InvoiceImportReview {
   const review = structuredClone(original);
+  delete review.verifiedInvoiceTotals;
+  if (input.verifiedInvoiceTotals)
+    review.verifiedInvoiceTotals = structuredClone(input.verifiedInvoiceTotals);
   review.purchasedAt = input.purchasedAt ?? null;
   review.purchaseNumber = input.purchaseNumber?.trim() || null;
   review.supplier = {
@@ -253,7 +302,8 @@ export function buildReviewedData(
   };
   review.containerNumber = input.containerNumber.trim();
   review.warnings = original.warnings.filter(
-    (w) => w.code === 'INVOICE_TOTAL_UNCERTAIN',
+    (w) =>
+      w.code === 'INVOICE_TOTAL_UNCERTAIN' && !review.verifiedInvoiceTotals,
   );
   const references = new Set<string>();
   review.items = input.items.map((item, i) => ({
@@ -305,6 +355,11 @@ export function currentSourceIssues(
 ): InvoiceImportIssue[] {
   const issues: InvoiceImportIssue[] = [];
   for (const warning of original.warnings) {
+    if (
+      warning.code === 'INVOICE_TOTAL_UNCERTAIN' &&
+      review.verifiedInvoiceTotals
+    )
+      continue;
     if (
       ['INVOICE_TOTAL_UNCERTAIN', 'ROW_LAYOUT_UNAVAILABLE'].includes(
         warning.code,
@@ -383,15 +438,13 @@ export function recalculate(review: InvoiceImportReview) {
       cents += Math.round((color.meter ?? 0) * 100);
     }
   review.parsedTotals = { rolls, meter: cents / 100 };
+  const invoiceTotals = review.verifiedInvoiceTotals ?? review.invoiceTotals;
   review.totalsMatch = {
-    rolls:
-      review.invoiceTotals.rolls === null
-        ? null
-        : rolls === review.invoiceTotals.rolls,
+    rolls: invoiceTotals.rolls === null ? null : rolls === invoiceTotals.rolls,
     meter:
-      review.invoiceTotals.meter === null
+      invoiceTotals.meter === null
         ? null
-        : cents === Math.round(review.invoiceTotals.meter * 100),
+        : cents === Math.round(invoiceTotals.meter * 100),
   };
 }
 
@@ -417,10 +470,10 @@ export function blockingIssues(
       issues.push({
         code: 'SOURCE_TOTAL_MISMATCH',
         field: `totals.${key}`,
-        message: `${key === 'rolls' ? 'Rolls' : 'Meter'} does not match the source invoice.`,
+        message: `${key === 'rolls' ? 'Rolls' : 'Meter'} does not match the ${review.verifiedInvoiceTotals ? 'manually verified' : 'source'} invoice total.`,
       });
   }
-  if (review.invoiceTotals.rolls === null)
+  if (review.invoiceTotals.rolls === null && !review.verifiedInvoiceTotals)
     issues.push({
       code: 'SOURCE_TOTAL_MISSING',
       message:

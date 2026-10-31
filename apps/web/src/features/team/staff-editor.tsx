@@ -306,7 +306,7 @@ export function StaffEditor({
           <footer className="team-save-bar">
             <p>
               {account
-                ? "Saving signs this staff member out on every device."
+                ? "Access changes apply without signing out. Password resets and deactivation end existing sessions."
                 : "Only the selected access will be available after sign-in."}
             </p>
             <Button type="submit">

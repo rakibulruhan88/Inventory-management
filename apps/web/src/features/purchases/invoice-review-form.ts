@@ -2,6 +2,7 @@ import { defaultPurchaseNumber } from "@afia/contracts";
 import type {
   InvoiceImportReview,
   InvoiceImportReviewInput,
+  InvoiceImportIssue,
 } from "@afia/contracts";
 
 export type EditableColor = {
@@ -10,7 +11,11 @@ export type EditableColor = {
   meter: string;
   sourceRow?: { item: number; color: number };
 };
-export type EditableReview = Omit<InvoiceImportReviewInput, "items"> & {
+export type EditableReview = Omit<
+  InvoiceImportReviewInput,
+  "items" | "verifiedInvoiceTotals"
+> & {
+  verifiedInvoiceTotals: { rolls: string; meter: string; confirmed: boolean };
   items: { itemCode: string; description: string; colors: EditableColor[] }[];
 };
 
@@ -29,6 +34,15 @@ export function editableReview(
       contactPerson: review.supplier.contactPerson,
     },
     containerNumber: review.containerNumber ?? "",
+    verifiedInvoiceTotals: {
+      rolls: review.verifiedInvoiceTotals
+        ? String(review.verifiedInvoiceTotals.rolls)
+        : "",
+      meter: review.verifiedInvoiceTotals
+        ? String(review.verifiedInvoiceTotals.meter)
+        : "",
+      confirmed: review.verifiedInvoiceTotals?.confirmed === true,
+    },
     items: review.items.map((item) => ({
       itemCode: item.itemCode,
       description: item.description ?? "",
@@ -71,8 +85,20 @@ function parsedNumber(value: string, optional: boolean): number | null {
   return number;
 }
 export function reviewPayload(edit: EditableReview): InvoiceImportReviewInput {
+  const { verifiedInvoiceTotals, ...fields } = edit;
+  const issues = manualTotalIssues(edit);
+  if (issues.length) throw new Error(issues[0].message);
   return {
-    ...edit,
+    ...fields,
+    ...(verifiedInvoiceTotals.confirmed
+      ? {
+          verifiedInvoiceTotals: {
+            rolls: parsedNumber(verifiedInvoiceTotals.rolls, false)!,
+            meter: parsedNumber(verifiedInvoiceTotals.meter, true)!,
+            confirmed: true as const,
+          },
+        }
+      : {}),
     purchasedAt: edit.purchasedAt || null,
     purchaseNumber: edit.purchaseNumber?.trim() || null,
     items: edit.items.map((item) => ({
@@ -85,6 +111,35 @@ export function reviewPayload(edit: EditableReview): InvoiceImportReviewInput {
       })),
     })),
   };
+}
+
+export function manualTotalIssues(edit: EditableReview): InvoiceImportIssue[] {
+  const totals = edit.verifiedInvoiceTotals;
+  if (!totals.rolls && !totals.meter && !totals.confirmed) return [];
+  const issues: InvoiceImportIssue[] = [];
+  for (const measure of ["rolls", "meter"] as const) {
+    try {
+      if (parsedNumber(totals[measure], measure === "meter") === null)
+        throw new Error();
+    } catch {
+      issues.push({
+        code: "INVALID_FIELD",
+        field: `verifiedInvoiceTotals.${measure}`,
+        message:
+          measure === "rolls"
+            ? "Enter a positive whole-number invoice Rolls total."
+            : "Enter an invoice Meter total of zero or greater, with at most two decimals.",
+      });
+    }
+  }
+  if (!totals.confirmed)
+    issues.push({
+      code: "INVALID_FIELD",
+      field: "verifiedInvoiceTotals.confirmed",
+      message:
+        "Confirm that you checked the totals and every item/color against the invoice.",
+    });
+  return issues;
 }
 
 export function liveTotals(edit: EditableReview) {

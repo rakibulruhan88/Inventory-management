@@ -15,9 +15,20 @@ import {
 
 import { preprocessInvoiceImage } from './image-preprocessing.js';
 import { invoiceGridCells } from './ocr-grid.js';
-import { findStructuralLabels } from './structural-labels.js';
+import {
+  findStructuralLabels,
+  matchStructuralLabel,
+} from './structural-labels.js';
+import { nativeTableCells, pdfTableGeometry } from './pdf-geometry.js';
+import { numericCellConsensus } from './ocr-quality.js';
+import { cropCellInk } from './ocr-cell.js';
+import { PaddleLineReader } from './paddle-line-reader.js';
+import { confirmedLineReading } from './ocr-quality.js';
 const require = createRequire(import.meta.url);
 export function nativeTextUsable(text: string) {
+  // Broken font encodings can still contain recognizable headings. Render
+  // these pages rather than trusting corrupt native values.
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/.test(text)) return false;
   const anchors = [
     'contract',
     'order\\s+list',
@@ -121,15 +132,26 @@ export function groupedOcrCells(spans: DocumentSpan[]) {
 }
 export function nativePositionedLines(
   items: { str: string; transform: number[]; height: number; width: number }[],
+  viewport?: { transform: number[]; scale: number },
 ) {
   return groupPositionedSpans(
-    items.map((item) => ({
-      text: item.str,
-      x: item.transform[4],
-      y: -item.transform[5],
-      width: item.width,
-      height: item.height,
-    })),
+    items.map((item) => {
+      const matrix = viewport?.transform;
+      const x = item.transform[4],
+        y = item.transform[5];
+      return {
+        text: item.str,
+        x: matrix ? matrix[0] * x + matrix[2] * y + matrix[4] : x,
+        y: matrix
+          ? matrix[1] * x +
+            matrix[3] * y +
+            matrix[5] -
+            (item.height * viewport.scale) / 2
+          : -y,
+        width: item.width * (viewport?.scale ?? 1),
+        height: item.height * (viewport?.scale ?? 1),
+      };
+    }),
   );
 }
 export function positionedLines(
@@ -144,6 +166,7 @@ export async function readDocument(
   options: ReaderOptions,
 ): Promise<ExtractedDocument> {
   let worker: Worker | undefined;
+  let paddle: PaddleLineReader | undefined;
   const lines: DocumentLine[] = [];
   const pages: DocumentPage[] = [];
   const warnings: ExtractedDocument['warnings'] = [];
@@ -177,7 +200,10 @@ export async function readDocument(
         gzip: true,
         cacheMethod: 'none',
       });
-      await worker.setParameters({ preserve_interword_spaces: '1' });
+      await worker.setParameters({
+        preserve_interword_spaces: '1',
+        thresholding_method: '2',
+      });
     }
     let prepared = await preprocessInvoiceImage(image, options.maxPixels);
     let grid = invoiceGridCells(
@@ -194,25 +220,45 @@ export async function readDocument(
       {},
       { text: true, blocks: true },
     );
-    const orientationScore = (text: string) =>
-      new Set(
-        findStructuralLabels(
-          text,
-          [
-            'invoice',
-            'contract',
-            'supplier',
-            'table',
-            'item',
-            'description',
-            'color',
-            'meter',
-            'rolls',
-          ],
-          true,
-        ).map((m) => m.role),
-      ).size;
-    let score = orientationScore(result.data.text);
+    const orientationScore = (data: typeof result.data) => {
+      const words =
+        data.blocks
+          ?.flatMap((block) =>
+            block.paragraphs.flatMap((paragraph) =>
+              paragraph.lines.flatMap((line) => line.words),
+            ),
+          )
+          .filter((word) => word.text.length >= 3) ?? [];
+      // AUTO may recognize sideways text while keeping its vertical boxes.
+      // Cell crops need the actual raster upright, not just readable text.
+      const upright = words.length
+        ? words.filter(
+            (word) =>
+              word.bbox.x1 - word.bbox.x0 >= word.bbox.y1 - word.bbox.y0,
+          ).length / words.length
+        : 1;
+      return (
+        upright *
+        new Set(
+          findStructuralLabels(
+            data.text,
+            [
+              'invoice',
+              'contract',
+              'supplier',
+              'table',
+              'item',
+              'description',
+              'color',
+              'meter',
+              'rolls',
+            ],
+            true,
+          ).map((m) => m.role),
+        ).size
+      );
+    };
+    let score = orientationScore(result.data);
     if (score < 4) {
       // Orientation is selected solely by invoice structure, never expected
       // supplier names, codes, or numbers. At most three bounded extra passes.
@@ -228,7 +274,7 @@ export async function readDocument(
           {},
           { text: true, blocks: true },
         );
-        const candidateScore = orientationScore(read.data.text);
+        const candidateScore = orientationScore(read.data);
         if (candidateScore >= 4 && candidateScore > score + 1) {
           prepared.canvas.width = 1;
           prepared.canvas.height = 1;
@@ -268,7 +314,14 @@ export async function readDocument(
       // and each color/numeric row. No role or business value is assumed here.
       await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK });
       for (const box of grid) {
-        const crop = createCanvas(Math.ceil(box.width), Math.ceil(box.height));
+        const padding = 10;
+        const crop = createCanvas(
+          Math.ceil(box.width) + padding * 2,
+          Math.ceil(box.height) + padding * 2,
+        );
+        const cropContext = crop.getContext('2d');
+        cropContext.fillStyle = 'white';
+        cropContext.fillRect(0, 0, crop.width, crop.height);
         crop
           .getContext('2d')
           .drawImage(
@@ -277,10 +330,10 @@ export async function readDocument(
             box.y,
             box.width,
             box.height,
-            0,
-            0,
-            crop.width,
-            crop.height,
+            padding,
+            padding,
+            box.width,
+            box.height,
           );
         const cell = await worker.recognize(
           crop.toBuffer('image/png'),
@@ -291,8 +344,8 @@ export async function readDocument(
         crop.height = 1;
         const words = toSpans(cell.data).map((span) => ({
           ...span,
-          x: span.x + box.x,
-          y: span.y + box.y,
+          x: span.x + box.x - padding,
+          y: span.y + box.y - padding,
         }));
         cells.push({
           ...box,
@@ -302,6 +355,224 @@ export async function readDocument(
           spans: words,
         });
       }
+      const inside = (span: DocumentSpan) =>
+        grid.some(
+          (box) =>
+            span.x >= box.x - 3 &&
+            span.x < box.x + box.width + 3 &&
+            span.y >= box.y - 3 &&
+            span.y < box.y + box.height + 3,
+        );
+      spans = [
+        ...spans.filter((span) => !inside(span)),
+        ...cells.flatMap((cell) => cell.spans),
+      ];
+    }
+    // Specialize numeric fields before treating generic text as stock values.
+    // Empty cells are included: an isolated "1" is often omitted by block OCR.
+    // Read whole physical cells, so a dropped digit outside a word box survives.
+    const numericHeaders = cells.filter((cell) =>
+      matchStructuralLabel(cell.text, ['meter', 'rolls'], true),
+    );
+    const numericCells = cells
+      .filter(
+        (cell) =>
+          numericHeaders.some(
+            (header) =>
+              Math.abs(cell.x - header.x) < 4 &&
+              cell.y >= header.y + header.height,
+          ) && /^[\d,.OoIl\s]*$/.test(cell.text),
+      )
+      .slice(0, 128);
+    for (const cell of numericCells) {
+      const crop = cropCellInk(prepared.canvas, cell);
+      if (!crop) continue;
+      const reads = [];
+      const mode =
+        crop.inkWidth < crop.inkHeight * 0.8 ? PSM.RAW_LINE : PSM.SINGLE_LINE;
+      for (const threshold of ['0', '2']) {
+        await worker.setParameters({
+          tessedit_pageseg_mode: mode,
+          tessedit_char_whitelist: '0123456789.,',
+          thresholding_method: threshold,
+          preserve_interword_spaces: '0',
+        });
+        const read = await worker.recognize(
+          crop.canvas.toBuffer('image/png'),
+          {},
+          { text: true, blocks: true },
+        );
+        reads.push({
+          text: read.data.text.trim(),
+          confidence: read.data.confidence ?? 0,
+        });
+      }
+      crop.canvas.width = 1;
+      crop.canvas.height = 1;
+      const original = {
+        text: cell.text.trim(),
+        confidence: cell.spans.length
+          ? Math.min(...cell.spans.map((s) => s.confidence ?? 100))
+          : 0,
+      };
+      const chosen = numericCellConsensus(original, reads);
+      cell.text = chosen.text;
+      cell.spans = chosen.text
+        ? [
+            {
+              text: chosen.text,
+              x: crop.x,
+              y: crop.y + crop.inkHeight / 2,
+              width: crop.inkWidth,
+              height: crop.inkHeight,
+              confidence: chosen.confidence,
+            },
+          ]
+        : [];
+    }
+    await worker.setParameters({
+      tessedit_char_whitelist: '',
+      thresholding_method: '2',
+      preserve_interword_spaces: '1',
+    });
+    // A second recognition model checks weak identifiers and size lines. Only
+    // two literal agreeing reads can replace a weak original. No spelling rules,
+    // saved-product values or invoice totals participate in recognition.
+    const textHeaders = cells.flatMap((cell) => {
+      const role = matchStructuralLabel(
+        cell.text,
+        ['item', 'color', 'description'],
+        true,
+      )?.role;
+      return role ? [{ cell, role }] : [];
+    });
+    const uncertain = cells
+      .flatMap((cell) => {
+        const header = textHeaders.find(
+          (h) =>
+            Math.abs(h.cell.x - cell.x) < 4 &&
+            cell.y >= h.cell.y + h.cell.height,
+        );
+        if (
+          !header ||
+          !cell.spans.length ||
+          Math.min(...cell.spans.map((s) => s.confidence ?? 100)) >= 80
+        )
+          return [];
+        if (header.role === 'description') {
+          return groupPositionedSpans(cell.spans)
+            .filter(
+              (line) => findStructuralLabels(line.text, ['size'], true).length,
+            )
+            .map((line) => ({
+              cell,
+              role: header.role,
+              spans: line.spans,
+              box: {
+                x: cell.x,
+                width: cell.width,
+                y: Math.min(...line.spans.map((s) => s.y - s.height / 2)) - 2,
+                height:
+                  Math.max(...line.spans.map((s) => s.y + s.height / 2)) -
+                  Math.min(...line.spans.map((s) => s.y - s.height / 2)) +
+                  4,
+              },
+            }));
+        }
+        // A multi-line/packed color cell must keep its existing row boundaries.
+        if (groupPositionedSpans(cell.spans).length !== 1) return [];
+        return [{ cell, role: header.role, spans: cell.spans, box: cell }];
+      })
+      .slice(0, 48);
+    if (uncertain.length) {
+      try {
+        paddle ??= await PaddleLineReader.create();
+        for (const target of uncertain) {
+          const description = target.role === 'description';
+          const crop = cropCellInk(prepared.canvas, target.box, {
+            padding: description ? 2 : 16,
+          });
+          if (!crop) continue;
+          try {
+            const first = await paddle.read(crop.canvas.toBuffer('image/png'));
+            const alternate = createCanvas(
+              crop.canvas.width + (description ? 4 : 8),
+              crop.canvas.height + (description ? 0 : 4),
+            );
+            const ctx = alternate.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, alternate.width, alternate.height);
+            ctx.drawImage(
+              crop.canvas,
+              description ? 2 : 4,
+              description ? 0 : 2,
+            );
+            let second;
+            try {
+              second = await paddle.read(alternate.toBuffer('image/png'));
+            } finally {
+              alternate.width = 1;
+              alternate.height = 1;
+            }
+            let chosen = confirmedLineReading(first, second, description);
+            if (!chosen) {
+              const retry = cropCellInk(prepared.canvas, target.box, {
+                padding: 8,
+              });
+              if (retry)
+                try {
+                  const third = await paddle.read(
+                    retry.canvas.toBuffer('image/png'),
+                  );
+                  chosen =
+                    confirmedLineReading(first, third, description) ??
+                    confirmedLineReading(second, third, description);
+                } finally {
+                  retry.canvas.width = 1;
+                  retry.canvas.height = 1;
+                }
+            }
+            if (
+              !chosen ||
+              (target.role === 'color' &&
+                !/^[A-Z0-9]+\s*#\s*\S/i.test(chosen.text)) ||
+              (target.role === 'description' &&
+                !findStructuralLabels(chosen.text, ['size'], true).length)
+            )
+              continue;
+            const retained = target.cell.spans.filter(
+              (span) => !target.spans.includes(span),
+            );
+            const span = {
+              text: chosen.text,
+              x: crop.x,
+              y: crop.y + crop.inkHeight / 2,
+              width: crop.inkWidth,
+              height: crop.inkHeight,
+              confidence: chosen.confidence,
+            };
+            target.cell.spans = [...retained, span].sort(
+              (a, b) => a.y - b.y || a.x - b.x,
+            );
+            target.cell.text = groupPositionedSpans(target.cell.spans)
+              .map((line) => line.text)
+              .join(' ');
+          } finally {
+            crop.canvas.width = 1;
+            crop.canvas.height = 1;
+          }
+        }
+      } catch {
+        warnings.push({
+          code: 'SECONDARY_OCR_UNAVAILABLE',
+          message:
+            'Some text could not be checked by the second reader. Review the highlighted fields against your invoice.',
+          page,
+        });
+      }
+    }
+
+    if (grid.length) {
       const inside = (span: DocumentSpan) =>
         grid.some(
           (box) =>
@@ -369,6 +640,10 @@ export async function readDocument(
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
           const page = await pdf.getPage(pageNumber);
           try {
+            const base = page.getViewport({ scale: 1 });
+            const nativeViewport = page.getViewport({
+              scale: 2400 / base.width,
+            });
             let text: { text: string; spans?: DocumentSpan[] }[] = [];
             try {
               const content = await page.getTextContent();
@@ -379,6 +654,7 @@ export async function readDocument(
                   ): item is import('pdfjs-dist/types/src/display/api.js').TextItem =>
                     'str' in item,
                 ),
+                nativeViewport,
               );
             } catch {
               warnings.push({
@@ -388,18 +664,41 @@ export async function readDocument(
                 page: pageNumber,
               });
             }
-            if (nativeTextUsable(text.map((line) => line.text).join('\n'))) {
-              const viewport = page.getViewport({ scale: 1 });
+            let geometry: ReturnType<typeof pdfTableGeometry> | undefined;
+            try {
+              geometry = pdfTableGeometry(
+                await page.getOperatorList(),
+                nativeViewport,
+              );
+            } catch {
+              /* Positioned text remains usable without vector rules. */
+            }
+            if (
+              nativeTextUsable(text.map((line) => line.text).join('\n')) ||
+              (!text.length && geometry && !geometry.nonRuleContent)
+            ) {
               pages.push({
                 page: pageNumber,
                 method: 'PDF_TEXT',
-                width: viewport.width,
-                height: viewport.height,
-                rules: [],
+                width: nativeViewport.width,
+                height: nativeViewport.height,
+                rules: geometry?.rules ?? [],
+                cells: nativeTableCells(
+                  geometry?.rules ?? [],
+                  text.flatMap((line) => line.spans ?? []),
+                  nativeViewport.width,
+                  nativeViewport.height,
+                ),
               });
               addLines(text, pageNumber, 'PDF_TEXT');
             } else {
-              const viewport = page.getViewport({ scale: 2 });
+              // 300 DPI target, downscaled only to honor the existing pixel cap.
+              const renderScale = Math.min(
+                300 / 72,
+                Math.sqrt(options.maxPixels / (base.width * base.height)) *
+                  0.99,
+              );
+              const viewport = page.getViewport({ scale: renderScale });
               const width = Math.ceil(viewport.width),
                 height = Math.ceil(viewport.height);
               if (
@@ -446,5 +745,6 @@ export async function readDocument(
     };
   } finally {
     await worker?.terminate();
+    await paddle?.close();
   }
 }

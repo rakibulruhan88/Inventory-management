@@ -13,6 +13,8 @@ describe('ruled image geometry, merged cells and OCR interoperability', () => {
     ['blurred', { blur: true }],
     ['rotated', { rotation: 1.25 }],
     ['sideways', { rotation: 90 }],
+    ['upside down', { rotation: 180 }],
+    ['skewed scan', { rotation: 4.5 }],
     ['compressed', { compressed: true }],
   ] as const)(
     'reads a %s image without guessing ownership',

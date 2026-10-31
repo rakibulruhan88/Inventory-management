@@ -345,7 +345,7 @@ export function NewSalePage() {
                   </div>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                     className="px-2 text-xs text-[var(--accent)]"
                     onClick={() => {
                       setSelectedCustomer(null);
@@ -449,7 +449,8 @@ export function NewSalePage() {
             )}
           </section>
 
-          <div className="sale-worksheet">
+          <div className="sale-worksheet" role="region" aria-labelledby="sale-items-title">
+          <h2 id="sale-items-title" className="sale-section-title">Items</h2>
           {products.isPending && (
             <p
               role="status"

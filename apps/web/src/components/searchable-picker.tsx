@@ -24,6 +24,7 @@ type SearchablePickerProps = {
   onChange: (value: string) => void;
   onSearchChange?: (search: string) => void;
   compact?: boolean;
+  disabled?: boolean;
   triggerClassName?: string;
   purchasePresentation?: boolean;
   nestedDrawer?: boolean;
@@ -131,6 +132,7 @@ export function SearchablePicker({
   onChange,
   onSearchChange,
   compact = false,
+  disabled = false,
   triggerClassName,
   purchasePresentation = false,
   nestedDrawer = false,
@@ -143,6 +145,7 @@ export function SearchablePicker({
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const selected = options.find((option) => option.value === value);
   const selectValue = (nextValue: string) => {
+    if (disabled) return;
     onChange(nextValue);
     setOpen(false);
   };
@@ -152,10 +155,12 @@ export function SearchablePicker({
       type="button"
       id={triggerId}
       aria-label={label}
+      disabled={disabled}
       className={cn(
         "flex items-center rounded-lg border border-[var(--input)] bg-white text-left shadow-sm outline-none transition hover:border-[var(--primary-border)] focus-visible:border-[var(--primary)] focus-visible:ring-2 focus-visible:ring-[rgb(37_99_235/0.16)]",
         compact ? "size-11 justify-center" : "min-h-13 w-full gap-3 px-4",
         triggerClassName,
+        disabled && "cursor-not-allowed bg-[var(--surface-muted)] opacity-60 hover:border-[var(--input)]",
       )}
     >
       {triggerContent ?? (
@@ -176,7 +181,7 @@ export function SearchablePicker({
 
   if (isDesktop) {
     return (
-      <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Root open={open && !disabled} onOpenChange={(nextOpen) => setOpen(nextOpen && !disabled)}>
         <Popover.Trigger asChild>{trigger}</Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
@@ -210,7 +215,7 @@ export function SearchablePicker({
 
   const MobileDrawerRoot = nestedDrawer ? Drawer.NestedRoot : Drawer.Root;
   return (
-    <MobileDrawerRoot open={open} onOpenChange={setOpen}>
+    <MobileDrawerRoot open={open && !disabled} onOpenChange={(nextOpen) => setOpen(nextOpen && !disabled)}>
       <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" />

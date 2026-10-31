@@ -214,7 +214,11 @@ export class StaffService {
                 data: {
                   ...data,
                   ...(passwordHash ? { passwordHash } : {}),
-                  sessionVersion: { increment: 1 },
+                  // Permissions are checked from the database on every request.
+                  // Only credential resets or deactivation revoke active sessions.
+                  ...(passwordHash || !input.isActive
+                    ? { sessionVersion: { increment: 1 } }
+                    : {}),
                 },
                 select,
               })

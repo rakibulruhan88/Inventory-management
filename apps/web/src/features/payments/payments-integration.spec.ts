@@ -6,10 +6,18 @@ import { describe, expect, it } from "vitest";
 import type { CustomerAccount, PaymentReceipt } from "@afia/contracts";
 import { CustomerDetailPage } from "@/features/records/customer-account-page";
 import { PaymentReceiptPage } from "@/features/records/payment-receipt-page";
+import { AuthContext } from "@/features/auth/auth-context";
 import {
   OutstandingCustomerLedger,
   RecentReceiptLedger,
 } from "./payments-ledgers";
+const asOwner = (element: ReturnType<typeof createElement>) =>
+  createElement(AuthContext.Provider, {
+    value: {
+      loading: false,
+      user: { id: "owner", name: "Owner", username: "owner", email: null, role: "OWNER" },
+    },
+  }, element);
 const receipt: PaymentReceipt = {
   id: "r1",
   receiptNumber: "PAY-20261007-000001",
@@ -108,7 +116,7 @@ function page(
         createElement(
           Routes,
           null,
-          createElement(Route, { path: pattern, element }),
+          createElement(Route, { path: pattern, element: asOwner(element) }),
         ),
       ),
     ),
@@ -117,7 +125,7 @@ function page(
   return result;
 }
 const ledger = (element: ReturnType<typeof createElement>) =>
-  renderToStaticMarkup(createElement(MemoryRouter, null, element));
+  renderToStaticMarkup(createElement(MemoryRouter, null, asOwner(element)));
 describe("Payments and Customer Account UI route integration without browser automation", () => {
   it("routes an outstanding row to the existing payment flow and account on desktop/mobile", () => {
     const html = ledger(

@@ -99,10 +99,12 @@ export function ruledInvoiceImage(
   const scale = options.scale ?? 1,
     angle = ((options.rotation ?? 0) * Math.PI) / 180;
   const width = Math.ceil(
-      (2000 * Math.cos(angle) + 2500 * Math.abs(Math.sin(angle))) * scale,
+      (2000 * Math.abs(Math.cos(angle)) + 2500 * Math.abs(Math.sin(angle))) *
+        scale,
     ),
     height = Math.ceil(
-      (2500 * Math.cos(angle) + 2000 * Math.abs(Math.sin(angle))) * scale,
+      (2500 * Math.abs(Math.cos(angle)) + 2000 * Math.abs(Math.sin(angle))) *
+        scale,
     );
   const output = createCanvas(width, height),
     out = output.getContext('2d');

@@ -27,7 +27,7 @@ export function SalePaymentPanel({
 }: Props) {
   return (
     <section
-      className="sale-payment border-y border-[var(--border)] py-3"
+      className="sale-payment"
       aria-label="Payment summary"
     >
       <h2 className="sale-settlement-title">Payment</h2>
@@ -127,7 +127,7 @@ export function SalePaymentPanel({
               key={value}
               aria-pressed={paymentMethod === value}
               onClick={() => form.setValue("paymentMethod", value)}
-              className={`min-h-10 rounded-md border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${paymentMethod === value ? "border-[var(--primary-border)] bg-[var(--primary-soft)] text-[var(--primary-strong)]" : "border-transparent text-[var(--muted)] hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"}`}
+              className={`min-h-10 rounded-md border px-2 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:pointer-events-none ${paymentMethod === value ? "border-[var(--primary-border)] bg-[var(--primary-soft)] text-[var(--primary-strong)]" : "border-[var(--border)] text-[var(--foreground-secondary)] hover:border-[var(--primary-border)] hover:bg-[var(--surface-warm)] hover:text-[var(--ink)]"}`}
             >
               {label}
             </button>

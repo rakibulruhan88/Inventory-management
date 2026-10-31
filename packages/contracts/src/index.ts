@@ -407,15 +407,18 @@ export type InvoiceImportReview = {
   items: InvoiceImportItem[];
   unassignedRows: InvoiceImportUnassignedRow[];
   invoiceTotals: { rolls: number | null; meter: number | null };
+  verifiedInvoiceTotals?: { rolls: number; meter: number; confirmed: true };
   parsedTotals: { rolls: number; meter: number };
   totalsMatch: { rolls: boolean | null; meter: boolean | null };
   validationPassed: boolean;
   warnings: InvoiceImportIssue[];
 };
-// Only editable business fields; totals and matching metadata are server-owned.
+// Calculated totals and matching metadata remain server-owned. Manual invoice
+// totals require explicit verification and are retained separately from extraction.
 export type InvoiceImportReviewInput = {
   purchasedAt?: string | null;
   purchaseNumber?: string | null;
+  verifiedInvoiceTotals?: { rolls: number; meter: number; confirmed: true };
   supplier: { name: string; phone: string | null; fax: string | null; address: string | null; contactPerson: string | null };
   containerNumber: string;
   items: {

@@ -150,8 +150,7 @@ export function InvoiceConfirmation({
       </Button>
       {!draft.readyForConfirmation && (
         <p className="mt-2 text-xs text-[var(--muted)]">
-          Save the reviewed data and resolve all blocking issues before
-          receiving stock.
+          Correct the details listed above and save your changes before receiving stock.
         </p>
       )}
       <Drawer.Root

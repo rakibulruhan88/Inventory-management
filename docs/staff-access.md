@@ -4,7 +4,7 @@ Team & Access is available to the Owner from desktop navigation and the mobile M
 
 The additive migration `20261010000000_staff_access` adds User permissions, sessionVersion and deletedAt, without rewriting stock or financial history. It has been applied to the configured local database. Apply pending migrations on another environment with `npm exec --workspace @afia/api -- prisma migrate deploy`, then restart its API using the regenerated Prisma client. No dependencies were upgraded.
 
-Existing Owner logins remain valid at session version zero. Existing Staff must receive explicit access. Saving a staff account revokes its sessions; the staff member signs in again to use updated access. Deleted usernames remain reserved because the user record retains document and audit relationships.
+Existing Owner logins remain valid at session version zero. Existing Staff must receive explicit access. Permission and profile saves preserve active sessions. The API enforces new permissions on the next request; active screens refresh permissions within 30 seconds or when the window regains focus. Password resets, deactivation and deletion revoke sessions. Deleted usernames remain reserved because the user record retains document and audit relationships.
 
 ## Manual browser checks
 
@@ -12,7 +12,7 @@ Existing Owner logins remain valid at session version zero. Existing Staff must 
 2. In a separate private window, sign in as that staff member. Confirm the landing page, desktop/mobile navigation and available actions match their access. Visit `/team`, `/activity` and a restricted page directly; access must be unavailable.
 3. Create a sale and open its invoice. Confirm Prepared by in the document corner, print preview, downloaded PDF and emailed PDF. Check long staff names and Bengali names.
 4. Create a Cashier with customer-payment and money-entry access. Receive old due, record Money In/Expense/Supplier Payment/Money Out, and check Prepared by on each document. Confirm void is unavailable until separately granted.
-5. Grant/revoke permissions or deactivate staff while their other window is open. Their next request must require sign-in; the app also refreshes account access while active. Reactivate and confirm the old session does not recover.
+5. Grant/revoke permissions while the staff window is open. They remain signed in; the next API request enforces the new access and navigation refreshes within 30 seconds or on window focus. Then deactivate staff: their next request must require sign-in. Reactivate and confirm the old session does not recover.
 6. Reset a staff password. The old password and old session must fail; the new password must work. Staff can also change their own password in Account settings.
 7. Rename and delete a staff member. Confirm their original document attribution and Activity events remain, the account disappears from Team & Access, and sign-in is blocked.
 8. Check Activity for staff creation, access/status changes, password resets and deletion. Credentials must never appear.

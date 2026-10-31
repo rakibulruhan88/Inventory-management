@@ -7,6 +7,28 @@ const parse = (lines = invoiceLines) =>
   parseCommercialInvoice(documentFixture(lines), 'test-draft');
 
 describe('deterministic commercial invoice parser', () => {
+  it('reads embedded and wrapped Contract Number without swallowing another label', () => {
+    const lines = invoiceLines.filter((l) => !l.startsWith('Contract No.'));
+    lines[0] = 'Commercial Invoice Contract No.:';
+    lines.splice(1, 0, 'TEST2614');
+    expect(parse(lines).containerNumber).toBe('TEST2614');
+    lines[1] = 'Date';
+    expect(parse(lines).containerNumber).toBeNull();
+    lines[1] = '20260820';
+    expect(parse(lines).containerNumber).toBeNull();
+  });
+  it('does not trust a printed total with conflicting OCR confidence', () => {
+    const d = documentFixture();
+    const total = d.lines.find((l) => l.text.startsWith('Total Meter'))!;
+    total.method = 'OCR';
+    total.spans = [
+      { text: '5670.5', x: 100, y: 100, width: 50, height: 10, confidence: 49 },
+    ];
+    const result = parseCommercialInvoice(d, 'draft');
+    expect(result.invoiceTotals.meter).toBeNull();
+    expect(result.validationPassed).toBe(false);
+  });
+
   it('maps Contract No. to Container Number and extracts exporter', () => {
     const result = parse();
     expect(result.containerNumber).toBe('B0312614');

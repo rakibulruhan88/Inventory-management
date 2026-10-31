@@ -17,7 +17,7 @@ export function invoiceGridCells(
       existing.y1 = Math.max(existing.y1, rule.y1);
     }
   }
-  if (edges.length < 6 || edges.length > 12) return [];
+  if (edges.length < 6 || edges.length > 32) return [];
   const median = (values: number[]) =>
     values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
   const top = median(edges.map((r) => r.y0)),
@@ -52,5 +52,5 @@ export function invoiceGridCells(
           height: unique[j + 1] - unique[j] - 6,
         });
   }
-  return cells.length <= 250 ? cells : [];
+  return cells.length <= 500 ? cells : [];
 }

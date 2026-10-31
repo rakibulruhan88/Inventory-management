@@ -329,7 +329,8 @@ export class InvoiceImportsService {
     original: InvoiceImportReview,
     db: Prisma.TransactionClient,
   ) {
-    // Do not trust saved totals, source totals, readiness, warnings or match IDs.
+    // Revalidate explicit manual totals; source totals and calculated metadata
+    // always come from extraction and fresh server calculation respectively.
     validateReviewInput(reviewInput(review));
     review.invoiceTotals = structuredClone(original.invoiceTotals);
     review.unassignedRows = structuredClone(original.unassignedRows);

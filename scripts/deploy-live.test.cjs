@@ -9,6 +9,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { databaseConnection, assetReferences, redact } = require('./deploy-live-support.cjs');
 const root = path.resolve(__dirname, '..');
+const realRsync = spawnSync('sh', ['-c', 'command -v rsync'], {encoding:'utf8'}).stdout.trim();
 
 test('backup URL removes Prisma parameters and passwords; passfile escapes credentials', () => {
   const db = databaseConnection('postgresql://afia:pa%3Ass%5Cword@localhost:5432/afia_inventory_prod?schema=public&connection_limit=5&pool_timeout=10&sslmode=require');
@@ -62,6 +63,7 @@ if(command === 'git') {
     write(path.join(p,'apps/web/dist-release/assets/index-ABC123.js'),'new-js');
     write(path.join(p,'apps/web/dist-release/assets/index-DEF456.css'),'new-css');
     write(path.join(p,'apps/web/dist-release/.user.ini'),'must-not-publish');
+    if(scenario === 'permissions') write(path.join(state,'generated-js-mode'),String(fs.statSync(path.join(p,'apps/web/dist-release/assets/index-ABC123.js')).mode & 0o777));
   }
 } else if(command === 'pm2') {
   if(a[0] === 'jlist') console.log(JSON.stringify([{name:'afia-api',pm2_env:{
@@ -79,6 +81,15 @@ if(command === 'git') {
 } else if(command === 'rsync') {
   if(scenario === 'publish') exit(1);
   const src = a[a.length-2], dest = a[a.length-1];
+  if(scenario === 'permissions') {
+    if(!src.endsWith('index.html')) write(path.join(state,'release-modes'),JSON.stringify({
+      directory:fs.statSync(path.join(src,'assets')).mode & 0o777,
+      js:fs.statSync(path.join(src,'assets/index-ABC123.js')).mode & 0o777,
+      index:fs.statSync(path.join(src,'index.html')).mode & 0o777,
+    }));
+    const result = require('node:child_process').spawnSync(process.env.TEST_RSYNC,a,{stdio:'inherit',env:{...process.env,PATH:process.env.TEST_REAL_PATH}});
+    exit(result.status ?? 1);
+  }
   if(src.endsWith('index.html')) fs.copyFileSync(src,path.join(dest,'index.html'));
   else {
     for(const exclusion of ['/.well-known/','/.user.ini','/404.html','/502.html','/index.html']) if(!a.includes('--exclude='+exclusion)) exit(9);
@@ -113,13 +124,16 @@ function fixture(scenario, local = false) {
     fs.writeFileSync(path.join(bin,command), '#!' + process.execPath + '\n' + mock, {mode:0o755});
   }
   const initialEnv = 'DATABASE_URL="postgresql://afia:secret-pass@localhost:5432/afia_inventory_prod?schema=public"\nJWT_SECRET=jwt-secret-value\n';
-  fs.writeFileSync(path.join(p,'.env'),initialEnv);
+  fs.writeFileSync(path.join(p,'.env'),initialEnv,{mode:0o600});
   fs.writeFileSync(path.join(p,'apps/api/package.json'),'{}');
   fs.writeFileSync(path.join(p,'package-lock.json'),'{}');
   fs.symlinkSync(path.dirname(require.resolve('dotenv/package.json',{paths:[path.join(root,'apps/api')]})),path.join(p,'node_modules/dotenv'));
   fs.writeFileSync(path.join(state,'head'), local ? 'a'.repeat(40) : 'b'.repeat(40));
-  fs.writeFileSync(path.join(storage,'private.pdf'),'keep-document');
-  for (const name of ['index.html','.user.ini','404.html','502.html','.well-known/challenge']) fs.writeFileSync(path.join(p,'apps/web/dist',name),'keep-'+name);
+  fs.chmodSync(storage,0o700);
+  fs.writeFileSync(path.join(storage,'private.pdf'),'keep-document',{mode:0o600});
+  for (const name of ['index.html','.user.ini','404.html','502.html','.well-known/challenge']) fs.writeFileSync(path.join(p,'apps/web/dist',name),'keep-'+name,{mode:0o600});
+  fs.chmodSync(path.join(p,'apps/web/dist'),0o700);
+  fs.chmodSync(path.join(p,'apps/web/dist/.well-known'),0o700);
   const supportFile = path.join(temp,'support.cjs');
   fs.writeFileSync(supportFile,fs.readFileSync(path.join(__dirname,'deploy-live-support.cjs'),'utf8')
     .replaceAll('/www/wwwroot/afia-inventory',p).replaceAll('/var/lib/afia/invoice-import-storage',storage));
@@ -131,7 +145,7 @@ function fixture(scenario, local = false) {
   const runner = path.join(p,'deploy-live.sh');
   fs.writeFileSync(runner,local ? fs.readFileSync(path.join(root,'deploy-live.sh')) : remote);
   const env = {...process.env,PATH:bin+path.delimiter+process.env.PATH,support_file:supportFile,
-    TEST_PROJECT:p,TEST_STATE:state,TEST_STORAGE:storage,TEST_SCENARIO:scenario};
+    TEST_PROJECT:p,TEST_STATE:state,TEST_STORAGE:storage,TEST_SCENARIO:scenario,TEST_RSYNC:realRsync,TEST_REAL_PATH:process.env.PATH};
   delete env.DATABASE_URL;
   env.PGPASSWORD = 'inherited-wrong-password';
   const result = spawnSync('bash',[runner,'a'.repeat(40)],{env,encoding:'utf8',timeout:30000});
@@ -153,6 +167,40 @@ test('sandboxed deployment succeeds, retries readiness, preserves env/documents/
     assert(fs.readdirSync(path.join(f.backups,'database')).some(x=>x.endsWith('.dump')));
     assert(fs.readdirSync(path.join(f.backups,'documents')).some(x=>x.endsWith('.tar.gz')));
     assert(!f.output.includes('secret-pass') && !f.output.includes('jwt-secret-value'));
+  } finally { fs.rmSync(f.temp,{recursive:true,force:true}); }
+});
+
+test('real rsync publishes nginx-readable assets under umask 077 without relaxing private or aaPanel files', () => {
+  assert(realRsync, 'rsync is required for the deployment permission regression');
+  const f = fixture('permissions');
+  const mode = file => fs.statSync(file).mode & 0o777;
+  try {
+    assert.equal(f.result.status,0,f.output);
+    assert.equal(+fs.readFileSync(path.join(f.state,'generated-js-mode'),'utf8'),0o600);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.state,'release-modes'),'utf8')),
+      {directory:0o755,js:0o644,index:0o644});
+    for(const directory of ['','assets']) assert.equal(mode(path.join(f.p,'apps/web/dist',directory)),0o755);
+    for(const asset of ['index.html','assets/index-ABC123.js','assets/index-DEF456.css']) {
+      const published = path.join(f.p,'apps/web/dist',asset);
+      assert.equal(mode(published),0o644);
+      assert(mode(published) & 0o004, 'nginx must be able to read the published asset as a non-owner');
+      assert.equal(fs.readFileSync(published,'utf8'),fs.readFileSync(path.join(f.p,'apps/web/dist-release',asset),'utf8'));
+    }
+    assert.equal(mode(path.join(f.p,'.env')),0o600);
+    assert.equal(fs.readFileSync(path.join(f.p,'.env'),'utf8'),f.initialEnv);
+    assert.equal(mode(f.storage),0o700);
+    assert.equal(mode(path.join(f.storage,'private.pdf')),0o600);
+    assert.equal(mode(path.join(f.p,'apps/web/dist/.well-known')),0o700);
+    for(const name of ['.user.ini','404.html','502.html','.well-known/challenge']) {
+      assert.equal(mode(path.join(f.p,'apps/web/dist',name)),0o600);
+      assert.equal(fs.readFileSync(path.join(f.p,'apps/web/dist',name),'utf8'),'keep-'+name);
+    }
+    for(const directory of ['database','documents','frontend']) {
+      assert.equal(mode(path.join(f.backups,directory)),0o700);
+      for(const file of fs.readdirSync(path.join(f.backups,directory))) assert.equal(mode(path.join(f.backups,directory,file)),0o600);
+    }
+    assert.equal(mode(path.join(f.backups,'deploy.lock')),0o600);
+    assert(!f.commands.includes('ssh ') && !f.commands.includes('git push'));
   } finally { fs.rmSync(f.temp,{recursive:true,force:true}); }
 });
 

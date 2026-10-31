@@ -1,4 +1,5 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
+import sharp from 'sharp';
 import { DocumentReadError, type DocumentRule } from './document-types.js';
 
 // A bounded raster transform, never a modification of the private original.
@@ -7,7 +8,20 @@ export async function preprocessInvoiceImage(
   maxPixels: number,
   quarterTurns = 0,
 ) {
-  let image = await loadImage(bytes);
+  // libvips decodes with a pixel limit and applies camera EXIF orientation.
+  // Originals stay private and immutable; this is an in-memory reading copy.
+  sharp.concurrency(1);
+  const normalized = await sharp(bytes, {
+    limitInputPixels: maxPixels,
+    failOn: 'error',
+  })
+    .autoOrient()
+    .flatten({ background: 'white' })
+    .grayscale()
+    .normalize({ lower: 1, upper: 99 })
+    .png()
+    .toBuffer();
+  let image = await loadImage(normalized);
   if (!image.width || !image.height || image.width * image.height > maxPixels)
     throw new DocumentReadError(
       'IMAGE_TOO_LARGE',
@@ -55,7 +69,7 @@ export async function preprocessInvoiceImage(
   let angle = 0,
     best = score(0);
   const baseline = best;
-  for (let candidate = -3; candidate <= 3; candidate += 0.25) {
+  for (let candidate = -7; candidate <= 7; candidate += 0.25) {
     const value = score(candidate);
     if (value > best) {
       best = value;

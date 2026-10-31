@@ -2,32 +2,40 @@
 .new-sale { padding-bottom: 180px; }
 .new-sale .sale-container { container: sale-workspace / inline-size; }
 .new-sale.sale-wide { padding-bottom: 32px; }
-.new-sale .sale-workspace { display: grid; gap: 12px; }
-.new-sale .sale-header { display: grid; grid-template-columns: 40px minmax(0, 1fr) 144px; gap: 8px; align-items: center; margin-bottom: 8px; }
-.new-sale .sale-header h1 { font-size: 18px; }
+.new-sale .sale-workspace { display: grid; gap: 20px; }
+.new-sale .sale-header { display: grid; grid-template-columns: 44px minmax(0, 1fr) 144px; gap: 8px; align-items: center; margin-bottom: 16px; }
+.new-sale .sale-header > a { width: 44px; height: 44px; }
+.new-sale .sale-header h1 { font-size: 22px; }
 .new-sale .sale-date { display: grid; gap: 2px; }
-.new-sale .sale-date > span { font-size: 11px; color: var(--muted); }
+.new-sale .sale-date > span { font-size: 12px; color: var(--muted); }
 .new-sale .sale-date input { padding-inline: 8px; }
-.new-sale .sale-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; align-items: center; padding-bottom: 8px; }
+.new-sale .sale-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: center; padding-bottom: 16px; }
 .new-sale .sale-customer { grid-column: 1 / -1; }
 .new-sale .sale-email { min-height: 32px; }
 .new-sale .sale-email input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; }
-.new-sale .sale-customer-summary { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.new-sale .sale-customer-summary { display: flex; align-items: start; justify-content: space-between; gap: 12px; padding-block: 4px; }
 .new-sale .sale-identity { margin: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .new-sale .sale-caption { font-size: 12px; color: var(--muted); }
 .new-sale .sale-customer-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; }
-.new-sale .sale-new-customer { padding-inline: 8px; font-size: 12px; color: var(--accent); }
-.new-sale .sale-customer-search .sale-caption { margin-bottom: 2px; }
+.new-sale .sale-new-customer { height: 44px; padding-inline: 12px; border-color: var(--primary-border); background: var(--primary-soft); color: var(--primary-strong); font-size: 13px; white-space: nowrap; }
+.new-sale .sale-new-customer:hover { border-color: var(--primary); background: var(--primary-border); }
+.new-sale .sale-customer-search .sale-caption { margin-bottom: 6px; font-weight: 500; color: var(--foreground-secondary); }
 .new-sale .sale-customer-details { display: grid; gap: 2px; }
 .new-sale .sale-customer-phone { font-size: 13px; font-weight: 400; color: var(--muted); }
 .new-sale .sale-customer-search-trigger { min-height: 44px; border-radius: 4px; padding: 8px 12px; box-shadow: none; }
+.new-sale .sale-customer-search-trigger:focus-visible { border-color: var(--primary); --tw-ring-color: var(--ring); }
 .new-sale .sale-customer-draft > button { margin-top: 8px; }
 .new-sale .sale-customer-entry label { grid-column: auto; }
 .new-sale .sale-customer-entry input { height: 44px; padding-inline: 10px; }
 .new-sale .sale-customer-entry > div > div > .grid { gap: 8px; }
 .new-sale .sale-worksheet, .new-sale .sale-settlement { min-width: 0; }
 .new-sale .sale-worksheet { container: sale-ledger / inline-size; }
-.new-sale .sale-item-header { padding: 4px 0; background: var(--surface); }
+.new-sale .sale-section-title, .new-sale .sale-settlement-title { font-size: 15px; font-weight: 600; line-height: 24px; }
+.new-sale .sale-section-title { margin-bottom: 12px; }
+.new-sale .sale-item-caption { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 500; color: var(--foreground-secondary); }
+.new-sale .sale-item-picker, .new-sale .sale-color-picker { min-height: 44px; border-radius: 4px; }
+.new-sale .sale-item-description { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--foreground-secondary); overflow-wrap: anywhere; }
+.new-sale .sale-item-header { padding: 0 0 8px; background: transparent; }
 .new-sale .sale-item + .sale-item { margin-top: 12px; }
 .new-sale .sale-add-action { min-height: 44px; height: 44px; }
 .new-sale .sale-ledger-head { display: none; }
@@ -35,6 +43,9 @@
 .new-sale .sale-color-identity { grid-column: 1 / -1; padding-right: 52px; }
 .new-sale .sale-color-identity button { min-height: 44px; }
 .new-sale .sale-availability { grid-column: 1 / -1; margin-top: -8px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.new-sale .sale-stock-long { display: inline-flex; flex-wrap: wrap; gap: 2px 12px; font-variant-numeric: tabular-nums; }
+.new-sale .sale-stock-long > span { display: inline-block; }
+.new-sale .sale-stock-long strong { font-weight: 500; color: var(--foreground-secondary); }
 .new-sale .sale-field-label { display: block; margin-bottom: 4px; font-size: 12px; }
 .new-sale .sale-price { grid-column: 1 / -1; }
 .new-sale input:not([type="checkbox"]) { min-width: 0; height: 44px; border-radius: 4px; font-variant-numeric: tabular-nums; }
@@ -45,19 +56,21 @@
 .new-sale .sale-remove { position: absolute; top: 12px; right: 0; }
 .new-sale .sale-remove-button { width: 44px; height: 44px; }
 .new-sale .sale-payment { border-top: 0; border-bottom: 0; padding: 0; display: grid; gap: 16px; }
-.new-sale .sale-settlement-title { grid-column: 1 / -1; font-size: 13px; font-weight: 600; }
+.new-sale .sale-settlement { border-top: 1px solid var(--border); padding-top: 20px; }
+.new-sale .sale-settlement-title { grid-column: 1 / -1; }
 .new-sale .sale-received input { font-size: 18px; font-weight: 600; }
 .new-sale .sale-financial-grid { display: grid; gap: 8px; font-variant-numeric: tabular-nums; }
 .new-sale .sale-financial-line { display: flex; justify-content: space-between; align-items: center; min-height: 32px; gap: 12px; }
+.new-sale .sale-financial-line > span:first-child, .new-sale .sale-payment-method > p { font-size: 13px; }
 .new-sale .sale-money-input { position: relative; width: min(180px, 58%); min-width: 0; }
 .new-sale .sale-money-input > span { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .new-sale .sale-money-input input { padding-left: 28px; padding-right: 10px; }
 .new-sale .sale-total-line { border-block: 1px solid var(--border); padding-block: 12px; margin-block: 4px; }
 .new-sale .sale-total-line > span { text-transform: uppercase; font-size: 13px; }
-.new-sale .sale-total-line strong { font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; text-align: right; }
+.new-sale .sale-total-line strong { font-size: 28px; line-height: 1.2; color: var(--primary-strong); overflow-wrap: anywhere; text-align: right; }
 .new-sale .sale-financial-line:last-of-type strong { font-size: 20px; }
 .new-sale .sale-payment-method > div { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.new-sale .sale-payment-method button { min-height: 44px; border-radius: 4px; font-size: 13px; }
+.new-sale .sale-payment-method button { min-height: 44px; border-radius: 4px; font-size: 13px; cursor: pointer; }
 .new-sale .sale-notes { margin-top: 12px; min-width: 0; }
 .new-sale .sale-notes button { max-width: 100%; padding-inline: 0; justify-content: start; color: var(--accent); }
 .new-sale .sale-complete { position: fixed; inset-inline: 12px; bottom: calc(61px + max(4px, env(safe-area-inset-bottom, 0px))); z-index: 20; margin-top: 12px; padding-block: 8px; gap: 8px; }
@@ -70,8 +83,14 @@
 .new-sale:not(.sale-wide):has(input:focus, textarea:focus) .sale-completion-figures { display: none; }
 /* Avoid a floating submission control over focused entry / the software keyboard. */
 .new-sale:has(input:focus, textarea:focus) .sale-complete { position: static; }
-@media (min-width: 1024px) {
-  .new-sale .sale-complete { left: 264px; right: 24px; bottom: 0; }
+@media (max-width: 399px) {
+  .new-sale .sale-header { grid-template-columns: 44px minmax(0, 1fr); }
+  .new-sale .sale-date { grid-column: 1 / -1; }
+  .new-sale .sale-customer-search { grid-template-columns: minmax(0, 1fr); }
+  .new-sale .sale-new-customer { justify-self: start; }
+}
+@media (min-width: 768px) {
+  .new-sale .sale-complete { left: calc(var(--sidebar-width, 240px) + 20px); right: 20px; bottom: 0; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 }
 /* Three numeric columns only when the content itself can fit their full labels. */
 @container sale-workspace (min-width: 370px) {
@@ -82,7 +101,7 @@
   .new-sale .sale-meta { grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; }
   .new-sale .sale-customer { grid-column: 1; }
   .new-sale .sale-email { grid-column: 2; }
-  .new-sale .sale-customer-search { max-width: 620px; }
+  .new-sale .sale-customer-search { max-width: 720px; gap: 12px; }
   .new-sale .sale-customer-details { grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: baseline; }
   .new-sale .sale-customer-details .sale-caption { grid-column: 1 / -1; }
   .new-sale .sale-color-row { grid-template-columns: minmax(70px, .7fr) minmax(90px, .8fr) minmax(160px, 1.2fr) minmax(110px, 1fr); column-gap: 12px; }
@@ -94,9 +113,9 @@
 }
 /* 240px app sidebar is already excluded by this content-width query. */
 @container sale-workspace (min-width: 1120px) {
-  .new-sale .sale-workspace { grid-template-columns: minmax(0, 1fr) 304px; gap: 16px 24px; align-items: start; }
+  .new-sale .sale-workspace { grid-template-columns: minmax(0, 1fr) 304px; gap: 20px 24px; align-items: start; }
   .new-sale .sale-meta { grid-column: 1 / -1; }
-  .new-sale .sale-settlement { position: sticky; top: 80px; padding-left: 20px; border-left: 1px solid var(--border); }
+  .new-sale .sale-settlement { position: sticky; top: 88px; padding: 0 0 0 24px; border-top: 0; border-left: 1px solid var(--border); }
   .new-sale .sale-payment { display: grid; grid-template-columns: minmax(0, 1fr); }
   .new-sale .sale-complete { position: static; inset: auto; flex-direction: column; align-items: stretch; }
   .new-sale .sale-complete > div { display: none; }
@@ -107,9 +126,9 @@
 /* Size the ledger from its own width, including when Payment sits beside it. */
 .new-sale .sale-mode { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; min-width: 0; }
 .new-sale .sale-mode > .sale-field-label { margin: 0; color: var(--muted); }
-.new-sale .sale-mode-buttons { display: flex; flex-shrink: 0; padding: 2px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+.new-sale .sale-mode-buttons { display: flex; flex-shrink: 0; padding: 2px; border: 1px solid var(--input); border-radius: 4px; background: transparent; }
 .new-sale .sale-mode-buttons button { min-height: 38px; height: 38px; min-width: 50px; padding: 0 8px; border-radius: 2px; font-size: 12px; box-shadow: none; }
-.new-sale .sale-mode-buttons button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.new-sale .sale-mode-buttons button[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary-strong); font-weight: 600; }
 .new-sale .sale-price-basis { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 400; color: var(--muted); pointer-events: none; }
 .new-sale .sale-meter-mode .sale-rolls { display: none; }
 @container sale-workspace (min-width: 370px) {
@@ -118,13 +137,15 @@
 @container sale-workspace (min-width: 600px) {
   .new-sale .sale-meter-mode .sale-price { grid-column: 2 / 4; }
 }
-@container sale-ledger (min-width: 860px) {
-  .new-sale .sale-color-row, .new-sale .sale-ledger-head { grid-template-columns: minmax(130px, 1fr) 96px 108px 52px 68px 128px 88px 32px; column-gap: 8px; }
+@container sale-ledger (min-width: 920px) {
+  .new-sale .sale-color-row, .new-sale .sale-ledger-head { grid-template-columns: minmax(180px, 1fr) 128px 108px 60px 80px 144px 96px 32px; column-gap: 8px; }
   .new-sale .sale-ledger-head { display: grid; border-bottom: 1px solid var(--border); padding-block: 8px; font-size: 12px; color: var(--muted); }
   .new-sale .sale-color-row { padding-block: 10px; align-items: start; }
   .new-sale .sale-color-identity, .new-sale .sale-availability, .new-sale .sale-mode, .new-sale .sale-price, .new-sale .sale-row-amount { grid-column: auto; padding-right: 0; text-align: left; }
-  .new-sale .sale-availability { margin-top: 0; align-self: start; padding-top: 4px; }
-  .new-sale .sale-availability-label { display: block; }
+  .new-sale .sale-availability { margin-top: 0; align-self: start; padding-top: 2px; }
+  .new-sale .sale-availability-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .new-sale .sale-remaining .sale-availability-label { position: static; width: auto; height: auto; clip-path: none; display: block; font-size: 11px; }
+  .new-sale .sale-stock-long { display: grid; gap: 0; line-height: 20px; }
   .new-sale .sale-meter-mode .sale-rolls { display: block; }
   .new-sale .sale-meter-mode .sale-price { grid-column: auto; }
   .new-sale .sale-remove { position: static; }

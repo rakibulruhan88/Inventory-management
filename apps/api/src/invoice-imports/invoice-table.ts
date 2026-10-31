@@ -387,6 +387,146 @@ function gridRows(
   }
   return null;
 }
+
+// Native exporters sometimes place several visual rows in a single ruled cell,
+// or center the item label after its first color. Use physical cell intervals
+// rather than carrying whichever item happened to precede the text baseline.
+// Splitting a packed color cell requires an exact count of independently
+// positioned Meter and Rolls values in the same interval.
+function refineNativeRows(rows: InvoiceTableRow[], page: DocumentPage) {
+  if (page.method !== 'PDF_TEXT' || !page.cells?.length) return rows;
+  const header = rows.find((row) => row.header && row.source.spans?.length);
+  if (!header) return rows;
+  const anchors = locatedHeaders(header.source);
+  const columnCells = (key: InvoiceColumn) => {
+    const anchor = anchors.find((anchor) => anchor.key === key);
+    if (!anchor) return [];
+    const cell = page.cells!.find(
+      (cell) =>
+        anchor.center >= cell.x - 3 &&
+        anchor.center <= cell.x + cell.width + 3 &&
+        header.source.spans!.some(
+          (span) => span.y >= cell.y - 3 && span.y <= cell.y + cell.height + 3,
+        ),
+    );
+    return cell
+      ? page.cells!.filter(
+          (candidate) =>
+            Math.abs(candidate.x - cell.x) < 4 &&
+            Math.abs(candidate.width - cell.width) < 4,
+        )
+      : [];
+  };
+  const itemCells = columnCells('item'),
+    descriptionCells = columnCells('description'),
+    colorCells = columnCells('color'),
+    meterCells = columnCells('meter'),
+    rollsCells = columnCells('rolls');
+  if (
+    ![itemCells, colorCells, meterCells, rollsCells].every(
+      (cells) => cells.length,
+    )
+  )
+    return rows;
+  const headerY = Math.max(...header.source.spans!.map((span) => span.y));
+  const bodySpans = (cell: DocumentCell) =>
+    cell.spans.filter((span) => span.y > headerY + span.height * 0.2);
+  const text = (cell: DocumentCell | undefined) =>
+    cell
+      ? bodySpans(cell)
+          .map((span) => span.text)
+          .join(' ')
+          .trim()
+      : '';
+  const at = (cells: DocumentCell[], y: number) =>
+    cells.filter((cell) => y >= cell.y - 3 && y <= cell.y + cell.height + 3);
+  const numericLines = (cell: DocumentCell | undefined) => {
+    const groups: { text: string; y: number }[] = [];
+    for (const span of cell
+      ? bodySpans(cell).sort((a, b) => a.y - b.y || a.x - b.x)
+      : []) {
+      const previous = groups.at(-1);
+      if (previous && Math.abs(previous.y - span.y) < span.height * 0.5)
+        previous.text += span.text;
+      else groups.push({ text: span.text.trim(), y: span.y });
+    }
+    return groups.filter((group) =>
+      /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(group.text),
+    );
+  };
+  const seenOwners = new Set<DocumentCell>();
+  return rows.map((row) => {
+    if (
+      !row.header &&
+      row.cells.item &&
+      !row.cells.color &&
+      row.source.spans?.length
+    ) {
+      const owners = at(itemCells, row.source.spans[0].y);
+      if (owners.length === 1 && seenOwners.has(owners[0]))
+        return { ...row, cells: { ...row.cells, item: '', description: '' } };
+    }
+    if (
+      row.header ||
+      row.layout !== 'POSITIONED' ||
+      !row.source.spans?.length ||
+      !row.cells.color ||
+      !row.cells.meter ||
+      !row.cells.rolls ||
+      !/\d/.test(row.cells.rolls)
+    )
+      return row;
+    const numericSpan = row.source.spans.find(
+      (span) => span.text === row.cells.meter,
+    );
+    const y = numericSpan?.y ?? row.source.spans[0].y;
+    if (y <= headerY) return row;
+    const cells = { ...row.cells };
+    const owners = at(itemCells, y);
+    if (owners.length !== 1) return { ...row, ambiguous: true };
+    const owner = owners[0],
+      item = text(owner);
+    if (item && !findStructuralLabels(item, ['total', 'stop']).length) {
+      if (seenOwners.has(owner)) {
+        cells.item = '';
+        cells.description = '';
+      } else {
+        cells.item = item;
+        const descriptions = at(descriptionCells, y);
+        cells.description =
+          descriptions.length === 1 ? text(descriptions[0]) : cells.description;
+        seenOwners.add(owner);
+      }
+    }
+    const colors = at(colorCells, y),
+      meters = at(meterCells, y),
+      rolls = at(rollsCells, y);
+    if (colors.length === 1 && meters.length === 1 && rolls.length === 1) {
+      const codes = text(colors[0]).match(
+        /[A-Z0-9]+\s*#[\s\S]*?(?=\s+[A-Z0-9]+\s*#|$)/gi,
+      );
+      const meterRows = numericLines(meters[0]),
+        rollRows = numericLines(rolls[0]);
+      if (
+        codes &&
+        codes.length === meterRows.length &&
+        codes.length === rollRows.length &&
+        codes.length > 1
+      ) {
+        const index = meterRows.findIndex(
+          (value) => Math.abs(value.y - y) < (numericSpan?.height ?? 10) * 0.5,
+        );
+        if (
+          index >= 0 &&
+          meterRows[index].text === cells.meter &&
+          rollRows[index].text === cells.rolls
+        )
+          cells.color = codes[index].trim();
+      }
+    }
+    return { ...row, cells };
+  });
+}
 export function invoiceTableRows(
   lines: DocumentLine[],
   pages?: DocumentPage[],
@@ -402,6 +542,7 @@ export function invoiceTableRows(
     }
     const layouts = pageLayouts(pageLines);
     let delimited: (InvoiceColumn | undefined)[] | null = null;
+    const pageRows: InvoiceTableRow[] = [];
     for (const source of pageLines) {
       const explicit = source.text.includes('|')
         ? source.text.split('|').map((c) => c.trim())
@@ -427,11 +568,11 @@ export function invoiceTableRows(
         )
         .at(-1);
       if (layout && source.spans?.length) {
-        result.push(cellsAt(source, layout));
+        pageRows.push(cellsAt(source, layout));
         continue;
       }
       if (header && header === delimited) {
-        result.push({
+        pageRows.push({
           source,
           cells: {},
           ambiguous: false,
@@ -446,7 +587,7 @@ export function invoiceTableRows(
           const key = delimited![i];
           if (key) cells[key] = v;
         });
-        result.push({
+        pageRows.push({
           source,
           cells,
           ambiguous: false,
@@ -454,7 +595,7 @@ export function invoiceTableRows(
           header: false,
         });
       } else
-        result.push({
+        pageRows.push({
           source,
           cells: {},
           ambiguous: true,
@@ -462,6 +603,9 @@ export function invoiceTableRows(
           header: false,
         });
     }
+    result.push(
+      ...(geometry ? refineNativeRows(pageRows, geometry) : pageRows),
+    );
   }
   return result;
 }

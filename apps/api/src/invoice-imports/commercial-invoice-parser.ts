@@ -7,16 +7,12 @@ import type {
 import { normalizeCode, normalizeText } from '../common/normalize.js';
 import { DocumentReadError, type ExtractedDocument } from './document-types.js';
 import { invoiceTableRows, type InvoiceTableRow } from './invoice-table.js';
-import {
-  findStructuralLabels,
-  prefixLabel,
-  labeledValue,
-} from './structural-labels.js';
+import { findStructuralLabels, prefixLabel } from './structural-labels.js';
 import { extractInvoiceSupplier } from './supplier-extraction.js';
 
 import { extractInvoiceDate } from './invoice-date.js';
 
-export const INVOICE_PARSER_VERSION = 3;
+export const INVOICE_PARSER_VERSION = 5;
 const numeric = /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/;
 export function parseInvoiceNumber(
   value: string | undefined,
@@ -72,7 +68,35 @@ export function parseCommercialInvoice(
     });
   const containerNumber =
     lines
-      .map((line) => labeledValue(line.text, 'contract', true))
+      .map((line, index) => {
+        const label = findStructuralLabels(line.text, ['contract'], true)[0];
+        if (
+          !label ||
+          (line.text.slice(0, label.start).trim() &&
+            !prefixLabel(line.text, ['invoice'], true))
+        )
+          return null;
+        const value = line.text
+          .slice(label.end)
+          .replace(/^[\s:：.#＃/|;-]+/, '')
+          .trim();
+        if (value) return value;
+        const next = lines[index + 1];
+        // Wrapped header values must be adjacent on the same page and contain
+        // only an identifier, never a date/label or following invoice section.
+        const nearby =
+          !line.spans?.length ||
+          !next?.spans?.length ||
+          Math.abs(next.spans[0].y - line.spans[0].y) <=
+            Math.max(line.spans[0].height, next.spans[0].height) * 4;
+        return nearby &&
+          next?.page === line.page &&
+          /^[A-Z0-9][A-Z0-9_/-]*$/i.test(next.text) &&
+          /\d/.test(next.text) &&
+          !/^\d{8}$/.test(next.text)
+          ? next.text
+          : null;
+      })
       .find((value) => value !== null)
       ?.match(/^[A-Z0-9][A-Z0-9_/-]*/i)?.[0] ?? null;
   const supplier = extractInvoiceSupplier(lines);
@@ -158,18 +182,31 @@ export function parseCommercialInvoice(
       continue;
     }
     const label = clean(cells.item) ?? source.text;
-    const structuralRow = !clean(cells.color);
+    // A summary label often spans Item/Description/Color columns. Never
+    // mistake it for a color simply because its baseline lies in Color.
+    const summary =
+      prefixLabel(source.text, ['total'], true) &&
+      !prefixLabel(source.text, ['totalMeter', 'totalRolls'], true);
+    const structuralRow =
+      !clean(cells.color) ||
+      Boolean(summary && !colorPattern.test(cells.color ?? ''));
     if (
       inTable &&
       structuralRow &&
       !row.header &&
-      prefixLabel(label, ['total'], true) &&
+      (summary || prefixLabel(label, ['total'], true)) &&
       !prefixLabel(label, ['totalMeter', 'totalRolls'], true)
     ) {
       if (row.layout !== 'UNAVAILABLE' && !row.ambiguous)
         tableTotals.push({
-          rolls: parseInvoiceNumber(cells.rolls, true),
-          meter: parseInvoiceNumber(cells.meter),
+          rolls:
+            row.confidence?.rolls !== undefined && row.confidence.rolls < 60
+              ? null
+              : parseInvoiceNumber(cells.rolls, true),
+          meter:
+            row.confidence?.meter !== undefined && row.confidence.meter < 60
+              ? null
+              : parseInvoiceNumber(cells.meter),
         });
       else
         issue(
@@ -278,7 +315,7 @@ export function parseCommercialInvoice(
       );
       continue;
     }
-    if (!colorPattern.test(color))
+    if (!colorPattern.test(color) || (color.match(/#/g)?.length ?? 0) > 1)
       issue(
         'COLOR_CODE_UNCERTAIN',
         `Color Code text could not be validated: ${color}. It is retained literally under its established item.`,
@@ -388,15 +425,25 @@ export function parseCommercialInvoice(
         [key === 'rolls' ? 'totalRolls' : 'totalMeter'],
         true,
       );
+      const uncertain =
+        line.method === 'OCR' &&
+        line.spans?.some(
+          (span) =>
+            /\d/.test(span.text) &&
+            span.confidence !== undefined &&
+            span.confidence < 60,
+        );
       return match
         ? [
-            parseInvoiceNumber(
-              line.text
-                .slice(match.end)
-                .replace(/^[\s:：]+/, '')
-                .split(/[\s|]/)[0],
-              key === 'rolls',
-            ),
+            uncertain
+              ? null
+              : parseInvoiceNumber(
+                  line.text
+                    .slice(match.end)
+                    .replace(/^[\s:：]+/, '')
+                    .split(/[\s|]/)[0],
+                  key === 'rolls',
+                ),
           ]
         : [];
     });
@@ -453,7 +500,12 @@ export function parseCommercialInvoice(
       'parsedTotals.meter',
     );
   const date = extractInvoiceDate(lines);
-  if (date.uncertain) issue('INVOICE_DATE_UNCERTAIN', 'Invoice date is malformed, conflicting or uncertain. Enter a verified Purchase Date.', 'purchasedAt');
+  if (date.uncertain)
+    issue(
+      'INVOICE_DATE_UNCERTAIN',
+      'Invoice date is malformed, conflicting or uncertain. Enter a verified Purchase Date.',
+      'purchasedAt',
+    );
   return {
     purchasedAt: date.purchasedAt,
     parserVersion: INVOICE_PARSER_VERSION,

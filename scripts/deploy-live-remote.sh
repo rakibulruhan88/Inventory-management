@@ -103,6 +103,9 @@ cd apps/web
 rm -rf -- dist-release
 support run npx --no-install tsc -b
 support run npx --no-install vite build --outDir dist-release
+# Vite inherits the private deployment umask; only public release output is readable.
+find dist-release -type d -exec chmod 755 {} +
+find dist-release -type f -exec chmod 644 {} +
 cd -- "$project"
 support assets apps/web/dist-release/index.html > "$scratch/expected-assets.txt"
 # Save the existing frontend before publishing; leave aaPanel's files in place.
@@ -118,13 +121,14 @@ support env-verify "$scratch/env.json"
 step='[8/10] Publish'
 printf '%s\n' "$step"
 mkdir -p apps/web/dist
+chmod 755 apps/web/dist
 # Excludes protect both sender and receiver; never use --delete-excluded.
 # Copy assets first, then atomically replace index.html after the copy succeeds.
-rsync -rlt --delay-updates --delete-delay \
+rsync -rltp --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r --delay-updates --delete-delay \
   --exclude='/.well-known/' --exclude='/.user.ini' \
   --exclude='/404.html' --exclude='/502.html' --exclude='/index.html' \
   apps/web/dist-release/ apps/web/dist/
-rsync -rt --delay-updates apps/web/dist-release/index.html apps/web/dist/
+rsync -rtp --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r --delay-updates apps/web/dist-release/index.html apps/web/dist/
 support assets apps/web/dist/index.html > "$scratch/published-assets.txt"
 cmp "$scratch/expected-assets.txt" "$scratch/published-assets.txt"
 
