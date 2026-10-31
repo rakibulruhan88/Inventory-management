@@ -18,6 +18,12 @@ export function pdfTableGeometry(
   viewport: { transform: number[]; width: number; height: number },
 ) {
   const rules: DocumentRule[] = [];
+  const maxRuleThickness =
+    1.5 *
+    Math.max(
+      Math.hypot(viewport.transform[0], viewport.transform[1]),
+      Math.hypot(viewport.transform[2], viewport.transform[3]),
+    );
   const stack: Matrix[] = [];
   let transform = [...identity],
     nonRuleContent = false;
@@ -56,13 +62,65 @@ export function pdfTableGeometry(
       transform = Util.transform(transform, args as number[]);
     else if (op === OPS.constructPath) {
       const paint = args?.[0];
-      // Fill rectangles can be backgrounds or text, so use stroke rules only.
-      if (paint === OPS.clip || paint === OPS.eoClip) continue;
+      if (paint === OPS.clip || paint === OPS.eoClip || paint === OPS.endPath)
+        continue;
+      const commands = (args[1] as ArrayLike<ArrayLike<number>>)?.[0];
+      // Spreadsheet exporters often paint table rules as very thin filled
+      // rectangles. Accept only one closed, axis-aligned rectangle, never a
+      // background, an open path, a compound path or a glyph outline.
+      if (paint === OPS.fill || paint === OPS.eoFill) {
+        if (
+          commands?.length === 13 &&
+          commands[0] === 0 &&
+          commands[3] === 1 &&
+          commands[6] === 1 &&
+          commands[9] === 1 &&
+          commands[12] === 4
+        ) {
+          const points = [1, 4, 7, 10].map((i) => [
+            commands[i],
+            commands[i + 1],
+          ]);
+          const [a, b, c, d] = points;
+          const rectangular =
+            (a[1] === b[1] &&
+              b[0] === c[0] &&
+              c[1] === d[1] &&
+              d[0] === a[0]) ||
+            (a[0] === b[0] && b[1] === c[1] && c[0] === d[0] && d[1] === a[1]);
+          const matrix = Util.transform(viewport.transform, transform);
+          const length = (p: number[], q: number[]) =>
+            Math.hypot(
+              matrix[0] * (q[0] - p[0]) + matrix[2] * (q[1] - p[1]),
+              matrix[1] * (q[0] - p[0]) + matrix[3] * (q[1] - p[1]),
+            );
+          const width = length(a, b),
+            height = length(b, c);
+          const thin = Math.min(width, height),
+            long = Math.max(width, height);
+          if (
+            rectangular &&
+            thin > 0 &&
+            thin <= maxRuleThickness &&
+            long >= 12 &&
+            long / thin >= 20
+          ) {
+            const midpoint = (p: number[], q: number[]) => [
+              (p[0] + q[0]) / 2,
+              (p[1] + q[1]) / 2,
+            ];
+            if (width > height) add(midpoint(a, d), midpoint(b, c));
+            else add(midpoint(a, b), midpoint(d, c));
+            continue;
+          }
+        }
+        nonRuleContent = true;
+        continue;
+      }
       if (paint !== OPS.stroke && paint !== OPS.closeStroke) {
         nonRuleContent = true;
         continue;
       }
-      const commands = (args[1] as ArrayLike<ArrayLike<number>>)?.[0];
       if (!commands || commands.length > 50_000) {
         nonRuleContent = true;
         continue;

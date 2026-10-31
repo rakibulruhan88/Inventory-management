@@ -21,9 +21,10 @@ import {
 } from './structural-labels.js';
 import { nativeTableCells, pdfTableGeometry } from './pdf-geometry.js';
 import { numericCellConsensus } from './ocr-quality.js';
-import { cropCellInk } from './ocr-cell.js';
+import { cropCellInk, removeCellEdgeRules } from './ocr-cell.js';
 import { PaddleLineReader } from './paddle-line-reader.js';
 import { confirmedLineReading } from './ocr-quality.js';
+import { fullPagePdfImage } from './pdf-image.js';
 const require = createRequire(import.meta.url);
 export function nativeTextUsable(text: string) {
   // Broken font encodings can still contain recognizable headings. Render
@@ -335,6 +336,20 @@ export async function readDocument(
             box.width,
             box.height,
           );
+        removeCellEdgeRules(crop, padding);
+        prepared.canvas
+          .getContext('2d')
+          .drawImage(
+            crop,
+            padding,
+            padding,
+            box.width,
+            box.height,
+            box.x,
+            box.y,
+            box.width,
+            box.height,
+          );
         const cell = await worker.recognize(
           crop.toBuffer('image/png'),
           {},
@@ -375,13 +390,12 @@ export async function readDocument(
       matchStructuralLabel(cell.text, ['meter', 'rolls'], true),
     );
     const numericCells = cells
-      .filter(
-        (cell) =>
-          numericHeaders.some(
-            (header) =>
-              Math.abs(cell.x - header.x) < 4 &&
-              cell.y >= header.y + header.height,
-          ) && /^[\d,.OoIl\s]*$/.test(cell.text),
+      .filter((cell) =>
+        numericHeaders.some(
+          (header) =>
+            Math.abs(cell.x - header.x) < 4 &&
+            cell.y >= header.y + header.height,
+        ),
       )
       .slice(0, 128);
     for (const cell of numericCells) {
@@ -406,6 +420,39 @@ export async function readDocument(
           text: read.data.text.trim(),
           confidence: read.data.confidence ?? 0,
         });
+      }
+      try {
+        paddle ??= await PaddleLineReader.create();
+        const first = await paddle.read(crop.canvas.toBuffer('image/png'));
+        const alternate = createCanvas(
+          crop.canvas.width + 8,
+          crop.canvas.height + 4,
+        );
+        let second;
+        try {
+          const ctx = alternate.getContext('2d');
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, alternate.width, alternate.height);
+          ctx.drawImage(crop.canvas, 4, 2);
+          second = await paddle.read(alternate.toBuffer('image/png'));
+        } finally {
+          alternate.width = 1;
+          alternate.height = 1;
+        }
+        const confirmed = confirmedLineReading(first, second);
+        if (
+          confirmed &&
+          /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(confirmed.text)
+        )
+          reads.push(confirmed, confirmed);
+      } catch {
+        if (!warnings.some((w) => w.code === 'SECONDARY_OCR_UNAVAILABLE'))
+          warnings.push({
+            code: 'SECONDARY_OCR_UNAVAILABLE',
+            message:
+              'Some values could not be checked by the second reader. Review the highlighted fields against your invoice.',
+            page,
+          });
       }
       crop.canvas.width = 1;
       crop.canvas.height = 1;
@@ -455,33 +502,61 @@ export async function readDocument(
         );
         if (
           !header ||
-          !cell.spans.length ||
-          Math.min(...cell.spans.map((s) => s.confidence ?? 100)) >= 80
+          (cell.spans.length > 0 &&
+            Math.min(...cell.spans.map((s) => s.confidence ?? 100)) >= 80)
         )
           return [];
         if (header.role === 'description') {
-          return groupPositionedSpans(cell.spans)
-            .filter(
-              (line) => findStructuralLabels(line.text, ['size'], true).length,
-            )
-            .map((line) => ({
-              cell,
-              role: header.role,
-              spans: line.spans,
-              box: {
-                x: cell.x,
-                width: cell.width,
-                y: Math.min(...line.spans.map((s) => s.y - s.height / 2)) - 2,
-                height:
-                  Math.max(...line.spans.map((s) => s.y + s.height / 2)) -
-                  Math.min(...line.spans.map((s) => s.y - s.height / 2)) +
-                  4,
+          const positioned = groupPositionedSpans(cell.spans);
+          return positioned.flatMap((line, index) => {
+            const label = findStructuralLabels(line.text, ['size'], true)[0];
+            if (!label) return [];
+            const next = positioned[index + 1];
+            const wrapped =
+              !/\d/.test(line.text.slice(label.end)) &&
+              next &&
+              /\d/.test(next.text) &&
+              !findStructuralLabels(next.text, ['backing'], true).length &&
+              next.spans[0].y - line.spans[0].y <=
+                Math.max(...line.spans.map((s) => s.height)) * 2.5;
+            const valueLine = wrapped ? next : line;
+            return [
+              {
+                cell,
+                role: header.role,
+                spans: valueLine.spans,
+                valueOnly: Boolean(wrapped),
+                box: {
+                  x: cell.x,
+                  width: cell.width,
+                  y:
+                    Math.min(
+                      ...valueLine.spans.map((s) => s.y - s.height / 2),
+                    ) - 2,
+                  height:
+                    Math.max(
+                      ...valueLine.spans.map((s) => s.y + s.height / 2),
+                    ) -
+                    Math.min(
+                      ...valueLine.spans.map((s) => s.y - s.height / 2),
+                    ) +
+                    4,
+                },
               },
-            }));
+            ];
+          });
         }
         // A multi-line/packed color cell must keep its existing row boundaries.
-        if (groupPositionedSpans(cell.spans).length !== 1) return [];
-        return [{ cell, role: header.role, spans: cell.spans, box: cell }];
+        if (groupPositionedSpans(cell.spans).length > 1) return [];
+        return [
+          {
+            cell,
+            role: header.role,
+            spans: cell.spans,
+            box: cell,
+            valueOnly: false,
+          },
+        ];
       })
       .slice(0, 48);
     if (uncertain.length) {
@@ -494,6 +569,13 @@ export async function readDocument(
           });
           if (!crop) continue;
           try {
+            // An empty OCR cell can contain a surviving border instead of a
+            // label. Only compact text ink is eligible for identifier recovery.
+            if (
+              !target.spans.length &&
+              crop.inkHeight > target.box.height * 0.7
+            )
+              continue;
             const first = await paddle.read(crop.canvas.toBuffer('image/png'));
             const alternate = createCanvas(
               crop.canvas.width + (description ? 4 : 8),
@@ -537,7 +619,9 @@ export async function readDocument(
               (target.role === 'color' &&
                 !/^[A-Z0-9]+\s*#\s*\S/i.test(chosen.text)) ||
               (target.role === 'description' &&
-                !findStructuralLabels(chosen.text, ['size'], true).length)
+                (target.valueOnly
+                  ? !/^\d.*(?:mm|[x*×])/i.test(chosen.text)
+                  : !findStructuralLabels(chosen.text, ['size'], true).length))
             )
               continue;
             const retained = target.cell.spans.filter(
@@ -665,11 +749,11 @@ export async function readDocument(
               });
             }
             let geometry: ReturnType<typeof pdfTableGeometry> | undefined;
+            let operators:
+              Awaited<ReturnType<typeof page.getOperatorList>> | undefined;
             try {
-              geometry = pdfTableGeometry(
-                await page.getOperatorList(),
-                nativeViewport,
-              );
+              operators = await page.getOperatorList();
+              geometry = pdfTableGeometry(operators, nativeViewport);
             } catch {
               /* Positioned text remains usable without vector rules. */
             }
@@ -692,6 +776,19 @@ export async function readDocument(
               });
               addLines(text, pageNumber, 'PDF_TEXT');
             } else {
+              const originalImage =
+                !text.length && operators
+                  ? await fullPagePdfImage(
+                      page,
+                      operators,
+                      pdfjs.OPS,
+                      options.maxPixels,
+                    )
+                  : null;
+              if (originalImage) {
+                await ocr(originalImage, pageNumber);
+                continue;
+              }
               // 300 DPI target, downscaled only to honor the existing pixel cap.
               const renderScale = Math.min(
                 300 / 72,

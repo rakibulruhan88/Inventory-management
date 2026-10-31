@@ -1,6 +1,67 @@
 import { createCanvas, type Canvas } from '@napi-rs/canvas';
 import type { DocumentCell } from './document-types.js';
 
+// Perspective interpolation can leave a thin border just inside a cell crop.
+// Remove only long edge strokes; the center (including a single "1") is intact.
+export function removeCellEdgeRules(canvas: Canvas, padding: number) {
+  const { width, height } = canvas;
+  const ctx = canvas.getContext('2d');
+  const pixels = ctx.getImageData(0, 0, width, height);
+  const columns: number[] = [],
+    rows: number[] = [];
+  const xZone =
+    padding + Math.min(24, Math.round((width - padding * 2) * 0.08));
+  const yZone =
+    padding + Math.min(12, Math.round((height - padding * 2) * 0.12));
+  for (let x = 0; x < width; x++) {
+    if (x > xZone && x < width - xZone) continue;
+    let ink = 0;
+    for (let y = padding; y < height - padding; y++) {
+      if (
+        [-2, -1, 0, 1, 2].some(
+          (dx) =>
+            x + dx >= 0 &&
+            x + dx < width &&
+            pixels.data[(y * width + x + dx) * 4] < 190,
+        )
+      )
+        ink++;
+    }
+    if (ink > (height - padding * 2) * 0.65)
+      for (let dx = -2; dx <= 2; dx++)
+        if (x + dx >= 0 && x + dx < width) columns.push(x + dx);
+  }
+  for (let y = 0; y < height; y++) {
+    if (y > yZone && y < height - yZone) continue;
+    let ink = 0;
+    for (let x = padding; x < width - padding; x++) {
+      if (
+        [-2, -1, 0, 1, 2].some(
+          (dy) =>
+            y + dy >= 0 &&
+            y + dy < height &&
+            pixels.data[((y + dy) * width + x) * 4] < 190,
+        )
+      )
+        ink++;
+    }
+    if (ink > (width - padding * 2) * 0.65)
+      for (let dy = -2; dy <= 2; dy++)
+        if (y + dy >= 0 && y + dy < height) rows.push(y + dy);
+  }
+  for (const x of columns)
+    for (let y = 0; y < height; y++) {
+      const i = (y * width + x) * 4;
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = 255;
+    }
+  for (const y of rows)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = 255;
+    }
+  ctx.putImageData(pixels, 0, 0);
+}
+
 // Crop the entire ink extent, not an OCR word box: a missing digit has no word
 // box and must still be visible to the second read. Table geometry owns the ROI.
 export function cropCellInk(

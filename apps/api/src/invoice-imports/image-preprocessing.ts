@@ -1,6 +1,14 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import sharp from 'sharp';
 import { DocumentReadError, type DocumentRule } from './document-types.js';
+import {
+  detectInvoiceFrame,
+  detectInvoiceRules,
+  eraseInvoiceRules,
+  flattenPaperShading,
+  rectifyInvoiceFrame,
+} from './image-geometry.js';
+import { invoiceGridCells } from './ocr-grid.js';
 
 // A bounded raster transform, never a modification of the private original.
 export async function preprocessInvoiceImage(
@@ -43,6 +51,20 @@ export async function preprocessInvoiceImage(
     quarterCanvas.width = 1;
     quarterCanvas.height = 1;
   }
+  const paper = createCanvas(image.width, image.height);
+  paper.getContext('2d').drawImage(image, 0, 0);
+  flattenPaperShading(paper);
+  const frame = detectInvoiceFrame(paper);
+  const corrected = frame
+    ? rectifyInvoiceFrame(paper, frame, maxPixels)
+    : paper;
+  image = await loadImage(corrected.toBuffer('image/png'));
+  if (corrected !== paper) {
+    corrected.width = 1;
+    corrected.height = 1;
+  }
+  paper.width = 1;
+  paper.height = 1;
   const previewScale = Math.min(1, 500 / Math.max(image.width, image.height));
   const preview = createCanvas(
     Math.round(image.width * previewScale),
@@ -147,22 +169,26 @@ export async function preprocessInvoiceImage(
   };
   scan(false);
   scan(true);
+  const supportedRules = detectInvoiceRules(canvas);
+  const useSupported =
+    invoiceGridCells(supportedRules, width, height).length >
+    invoiceGridCells(rules, width, height).length;
+  if (useSupported)
+    rules.splice(
+      0,
+      rules.length,
+      ...supportedRules.map(({ stroke: _stroke, ...rule }) => rule),
+    );
   // Remove only long straight rules after recording them. A margin of one
   // pixel removes antialiasing without aggressive thresholding of text.
-  for (const rule of rules)
-    for (
-      let y = Math.max(0, rule.y0 - 1);
-      y <= Math.min(height - 1, rule.y1 + 1);
-      y++
-    )
-      for (
-        let x = Math.max(0, rule.x0 - 1);
-        x <= Math.min(width - 1, rule.x1 + 1);
-        x++
-      ) {
-        const i = (y * width + x) * 4;
-        pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
-      }
+  // A failed grid must retain its original ink. In particular, shadow runs
+  // must never erase text just because they exceeded a fixed pixel threshold.
+  const removable = invoiceGridCells(rules, width, height).length
+    ? useSupported
+      ? supportedRules.map((rule) => rule.stroke)
+      : rules
+    : [];
+  eraseInvoiceRules(pixels, width, height, removable);
   ctx.putImageData(data, 0, 0);
   // Collapse duplicate pixel-thick rules; retain relative physical cell edges.
   const merged: DocumentRule[] = [];

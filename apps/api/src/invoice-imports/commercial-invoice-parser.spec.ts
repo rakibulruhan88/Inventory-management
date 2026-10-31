@@ -7,6 +7,22 @@ const parse = (lines = invoiceLines) =>
   parseCommercialInvoice(documentFixture(lines), 'test-draft');
 
 describe('deterministic commercial invoice parser', () => {
+  it('ignores an empty LC total field before the populated invoice total', () => {
+    const lines = invoiceLines.filter(
+      (line) => !/^Total (Meter|Rolls):/.test(line),
+    );
+    const at = lines.findIndex((line) => line.startsWith('Freight'));
+    lines.splice(
+      at,
+      0,
+      'LC Amount | | | | | |',
+      'Total Amount | | | 5670.5 | 154 | |',
+    );
+    expect(parse(lines).invoiceTotals).toEqual({ rolls: 154, meter: 5670.5 });
+    const blank = lines.filter((line) => !line.startsWith('Total Amount |'));
+    expect(parse(blank).invoiceTotals).toEqual({ rolls: null, meter: null });
+    expect(parse(blank).validationPassed).toBe(false);
+  });
   it('reads embedded and wrapped Contract Number without swallowing another label', () => {
     const lines = invoiceLines.filter((l) => !l.startsWith('Contract No.'));
     lines[0] = 'Commercial Invoice Contract No.:';

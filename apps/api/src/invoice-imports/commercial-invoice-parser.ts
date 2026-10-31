@@ -197,6 +197,13 @@ export function parseCommercialInvoice(
       (summary || prefixLabel(label, ['total'], true)) &&
       !prefixLabel(label, ['totalMeter', 'totalRolls'], true)
     ) {
+      // Some forms print an unused LC/Grand Total field before the actual
+      // populated total. A wholly blank field is not a conflicting amount.
+      // If no populated total follows, readTotal still requires manual review.
+      if (!clean(cells.rolls) && !clean(cells.meter)) {
+        stopped = true;
+        continue;
+      }
       if (row.layout !== 'UNAVAILABLE' && !row.ambiguous)
         tableTotals.push({
           rolls:
